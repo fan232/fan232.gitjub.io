@@ -1,0 +1,2944 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<script>
+(function(){
+  var KEY='ru.stalker.sheet', CH='ru.stalker.sheet/', p=null;
+  var SRC=['https://esm.sh/@owlbear-rodeo/sdk@3','https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@3/+esm'];
+  function load(){
+    if(window.OBR)return Promise.resolve(window.OBR);
+    var i=0;
+    function next(){
+      if(i>=SRC.length)return Promise.reject(new Error('sdk'));
+      return import(SRC[i++]).then(function(m){return m.default||m.OBR||m;}).catch(next);
+    }
+    return Promise.race([next(),new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},6000);})]);
+  }
+  function makeRoom(OBR){
+    var me=OBR.player.id, players=[], pres={}, cbs=[];
+    function snap(){
+      var a=[{peer:me,isMe:true,sameTab:true,kind:'viewer',presence:pres}];
+      players.forEach(function(q){ if(q.id!==me&&q.metadata&&q.metadata[KEY])a.push({peer:q.id,isMe:false,sameTab:false,kind:'viewer',presence:q.metadata[KEY]||{}}); });
+      return a;
+    }
+    function notify(){cbs.forEach(function(f){f({peers:snap()});});}
+    Promise.resolve(OBR.party.getPlayers()).then(function(l){players=l||[];notify();});
+    OBR.party.onChange(function(l){players=l||[];notify();});
+    return {
+      peers:snap,
+      presence:function(x){pres=Object.assign({},x);notify();return Promise.resolve(OBR.player.setMetadata(Object.fromEntries([[KEY,pres]])));},
+      onPeers:function(f){cbs.push(f);setTimeout(notify,0);return function(){cbs=cbs.filter(function(g){return g!==f;});};},
+      on:function(t,f){return OBR.broadcast.onMessage(CH+t,function(ev){var m=ev.data||{};f({peer:m.from,isMe:false,sameTab:false,kind:'viewer',topic:t,data:m.data});});},
+      emit:function(t,d){return OBR.broadcast.sendMessage(CH+t,{from:me,data:d},{destination:'REMOTE'});},
+      leave:function(){return Promise.resolve();}
+    };
+  }
+  function share(OBR){
+    window.__obrShare=function(text){
+      Promise.resolve(OBR.player.getName()).then(function(n){
+        var name=n||'Игрок';
+        OBR.notification.show(name+': '+text);
+        OBR.broadcast.sendMessage(CH+'roll',{from:OBR.player.id,name:name,text:String(text).slice(0,300)},{destination:'REMOTE'});
+      });
+    };
+  }
+  window.claude={use:function(n){
+    if(n!=='room')return Promise.resolve(null);
+    if(!p)p=load().then(function(OBR){
+      if(!OBR.isAvailable)return null;
+      return new Promise(function(res){OBR.onReady(function(){share(OBR);window.__OBR=OBR;document.dispatchEvent(new Event('obr-ready'));res({join:function(){return Promise.resolve(makeRoom(OBR));}});});});
+    }).catch(function(){return null;});
+    return p;
+  }};
+})();
+</script>
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Лист персонажа</title>
+<style>
+:root{--bg:#d9cfb8;--paper:#e8d9b5;--ink:#2a2118;--metal:#2b211a;--metal2:#3d2f24;--rust:#a8774a;--green:#3bff6a;--dim:#1a3a24;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17120e}}
+:root[data-theme="dark"]{--bg:#17120e}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Courier New",ui-monospace,monospace;padding:12px}
+.sheet{max-width:720px;margin:0 auto;background:var(--paper);padding:16px;border:2px solid #8c7650;box-shadow:0 4px 18px #0006}
+h1{margin:0 0 8px;background:var(--metal);color:#e8d9b5;text-align:center;letter-spacing:.2em;font-size:1.5rem;padding:8px}
+.name{display:flex;gap:8px;align-items:center;margin-bottom:12px;font-weight:bold}
+.name input{flex:1;background:transparent;border:0;border-bottom:2px solid var(--ink);font:inherit;font-size:1.1rem;color:var(--ink);padding:4px}
+.panel{background:var(--metal);color:#e8d9b5;padding:10px;margin-bottom:12px;border:2px solid #14100c}
+.panel h2{margin:0 0 8px;font-size:.95rem;letter-spacing:.12em;text-align:center;color:#e8d9b5}
+.top{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:620px){.top{grid-template-columns:200px 1fr}}
+.body-wrap{display:flex;flex-direction:column;align-items:center}
+.body-wrap svg{width:170px;height:auto}
+.part{cursor:pointer;stroke:#0a1;stroke-width:2;transition:fill .15s}
+.part:focus-visible{outline:3px solid #fff}
+.s0{fill:#3bff6a}.s1{fill:#f2d03a}.s2{fill:#ff8a2a}.s3{fill:#d02a2a}
+.hint{font-size:.72rem;opacity:.8;text-align:center;margin-top:6px}
+.vit{background:#07140b;color:var(--green);padding:10px;border:1px solid #1d5a30}
+.vrow{display:grid;grid-template-columns:90px 1fr 70px;gap:8px;align-items:center;margin:8px 0;font-size:.8rem}
+.vrow input[type=range]{accent-color:var(--green);width:100%}
+.vrow input[type=number]{width:70px;background:#0b2a15;border:1px solid #1d5a30;color:var(--green);font:inherit;padding:3px}
+.stat{display:grid;grid-template-columns:110px 1fr 62px;gap:8px;align-items:center;margin:8px 0;font-size:.82rem}
+.segs{display:flex;gap:3px}
+.seg{flex:1;height:22px;background:#4a3a2c;border:1px solid #14100c;cursor:pointer;padding:0}
+.seg.on{background:var(--rust)}
+.seg:focus-visible{outline:2px solid #fff}
+.stat output{text-align:right;font-weight:bold;font-size:.78rem}
+.seg.pen{background:#a02020}
+.seg.bon{background:#2a7a3a}
+.stat output.bon{color:#1d6a30}
+.stat .why.bon{color:#1d6a30}
+.stat .why{grid-column:1/-1;font-size:.68rem;color:#a02020;margin-top:-4px}
+.stat .why:empty{display:none}
+.stat output.pen{color:#a02020}
+.eq{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.slot{display:flex;flex-direction:column;gap:3px;font-size:.7rem;text-align:center}
+.slot textarea,.cell textarea{width:100%;height:68px;resize:none;background:var(--metal2);border:1px solid #14100c;color:#e8d9b5;font:inherit;font-size:.72rem;padding:4px;text-align:center}
+.slot textarea:focus,.cell textarea:focus,.vit input:focus,.name input:focus{outline:2px solid var(--rust)}
+.inv{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:620px){.inv{grid-template-columns:3fr 4fr 3fr}}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.grid.c{grid-template-columns:repeat(4,1fr)}
+.cell textarea{height:60px}
+.notes textarea{width:100%;height:90px;background:var(--metal2);border:1px solid #14100c;color:#e8d9b5;font:inherit;padding:6px}
+.bar{display:flex;gap:8px;justify-content:flex-end;margin-bottom:8px;flex-wrap:wrap}
+button.t{background:var(--metal);color:#e8d9b5;border:0;padding:6px 10px;font:inherit;cursor:pointer}
+@media(max-width:480px){.eq{grid-template-columns:repeat(2,1fr)}.stat{grid-template-columns:90px 1fr 58px}}
+.addbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.addbar select{flex:1;min-width:110px;background:var(--metal2);color:#e8d9b5;border:1px solid #14100c;font:inherit;padding:5px}
+.msg{min-height:1.2em;font-size:.78rem;color:#f2d03a;margin-bottom:6px}
+.grids{display:flex;flex-wrap:wrap;gap:12px}
+.gwrap{font-size:.72rem}
+.gwrap>span{display:block;margin-bottom:3px;letter-spacing:.08em}
+.gr{position:relative;border:2px solid #14100c;background-color:#1b140f;background-image:linear-gradient(#4a3a2c 1px,transparent 1px),linear-gradient(90deg,#4a3a2c 1px,transparent 1px);background-size:38px 38px}
+.sl{position:relative;height:72px;border:2px solid #14100c;background:#1b140f}
+.it.gear{background:#9a9aa3}
+.it{position:absolute;border:2px solid #14100c;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:.7rem;font-weight:bold;cursor:grab;touch-action:none;user-select:none;color:#10100c;line-height:1.1;text-align:center;padding:1px;transition:box-shadow 0.2s;}
+.it small{font-size:.6rem;font-weight:normal;opacity:.85}
+.it.weapon{background:#b7a27a}.it.med{background:#7fb883}.it.ammo{background:#c9a24a}.it.key{background:#8aa3c9}
+.it.sel{outline:2px solid #fff;outline-offset:-4px}
+.it.drag{z-index:9;opacity:.85;cursor:grabbing}
+.cnt{position:absolute;right:2px;bottom:1px;font-size:.62rem;background:#000b;color:#fff;padding:0 3px}
+.ph{position:absolute;pointer-events:none;border:2px dashed;z-index:8}
+.ph.ok{background:#3bff6a44;border-color:#3bff6a}.ph.bad{background:#ff3b3b44;border-color:#ff3b3b}
+.info{margin-top:10px;font-size:.78rem;line-height:1.4;background:#1b140f;padding:8px;border:1px solid #14100c}
+.info b{display:block;font-size:.9rem}
+.info .t{margin:6px 6px 0 0}
+.vrow.low input[type=number]{color:#ff6a5a;border-color:#a33}
+.vrow.low span{color:#ff6a5a}
+.vrow.rad-danger input[type=number]{color:#ff3b3b;border-color:#ff3b3b}
+.vrow.rad-danger span{color:#ff3b3b}
+.clock{border-top:1px solid #1d5a30;margin-top:10px;padding-top:8px;font-size:.8rem}
+.clock b{font-size:1rem;letter-spacing:.08em}
+.tb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+.clock input[type=number]{width:62px;background:#0b2a15;border:1px solid #1d5a30;color:var(--green);font:inherit;padding:3px}
+.rates{font-size:.72rem}
+.tmsg{margin-top:6px;min-height:1.2em;color:#f2d03a;font-size:.75rem}
+.part.cur{stroke:#fff;stroke-width:3}
+.wp{margin-top:8px;font-size:.72rem;width:100%}
+.wp b{display:block;margin-bottom:4px}
+.wp .t{padding:4px 6px;font-size:.7rem;margin:0 4px 4px 0;border:1px solid #6b5a46}
+.wd{display:flex;gap:4px}
+.wd .t:first-child{flex:1;text-align:left}
+.wsum{margin-top:6px;white-space:pre-line;opacity:.85}
+
+.wallet{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:.85rem}
+.wallet input[type=number]{width:90px;background:var(--metal2);border:1px solid #8c7650;color:#f2d03a;font:inherit;font-weight:bold;padding:4px}
+.wtop{margin-left:auto;color:#8c5a00;white-space:nowrap}
+.shoptabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.shoptabs .t.act{background:var(--rust);color:#10100c}
+.shopopts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.75rem;margin-bottom:6px}
+.shopopts select,.shopopts input[type=number]{background:var(--metal2);color:#e8d9b5;border:1px solid #14100c;font:inherit;padding:4px}
+.shopopts input[type=number]{width:56px}
+.shoplist{display:flex;flex-direction:column;gap:4px;max-height:340px;overflow-y:auto}
+.srow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;background:#1b140f;border:1px solid #4a3a2c;padding:4px 8px;font-size:.76rem}
+.srow small{display:block;opacity:.7;font-size:.66rem}
+.srow .pr{color:#f2d03a;font-weight:bold;white-space:nowrap}
+.srow button:disabled{opacity:.4;cursor:not-allowed}
+.trader{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.8rem;margin-bottom:8px;padding:6px;border:1px dashed #8c7650}
+.effects{margin-top:8px;font-size:.74rem;line-height:1.4;border-top:1px solid #1d5a30;padding-top:6px}
+.effects div{margin:2px 0}.effects .ok{opacity:.6}.effects .bad{color:#f2d03a}.effects .crit{color:#ff6a5a;font-weight:bold}
+.campbox{font-size:.78rem}
+.campbox .st{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:8px}
+.campbox .st span b{color:#f2d03a}
+.campbox .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:#1b140f;border:1px solid #4a3a2c;padding:4px 8px;margin-bottom:4px}
+.campbox .qty{display:flex;gap:6px;align-items:center}
+.campbox .qty button{padding:2px 8px}
+.campbox h3{margin:10px 0 6px;font-size:.8rem;letter-spacing:.08em;color:#c9a24a}
+.fireRow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.fireChk{display:flex;gap:4px;align-items:center;font-weight:bold}
+.forage{display:flex;gap:6px;align-items:center;font-size:.75rem;font-weight:bold}
+#forage-hint{font-size:.68rem;opacity:.75}
+.campcard{border:2px solid #e0a040;background:#33261b;box-shadow:inset 0 0 0 1px #14100c,0 0 8px rgba(224,160,64,.35);padding:8px 10px;margin:10px 0;border-radius:3px}
+.campcard .ct{font-size:.72rem;font-weight:bold;letter-spacing:.14em;color:#e0a040;margin-bottom:6px}
+.campcard .fireRow:last-child{margin-bottom:0}
+.campcard button.t:not(:disabled){border-color:#e0a040}
+.fold-hide{display:none!important}
+h2[role=button]:focus-visible{outline:2px solid #fff}
+.part.lost{fill:#000!important;stroke:#666!important}
+.slot.lost .sl{background:#000;opacity:.45;outline:1px solid #555}
+.part.prosth{fill:#4d5f73!important;stroke:#9ab!important}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>ЛИСТ ПЕРСОНАЖА</h1>
+  <div class="bar">
+    <button class="t" id="export-btn" style="background:#1d5a30;">Сохранить файл</button>
+    <button class="t" id="import-btn" style="background:#2b211a;">Загрузить файл</button>
+    <input type="file" id="import-file" accept=".json" style="display:none;">
+    <button class="t" id="reset">Очистить лист</button>
+  </div>
+  
+  <label class="name">ИМЯ: <input data-k="name" placeholder="Имя персонажа"><b class="wtop" id="wallet-top">₮ 0</b></label>
+
+  <div class="top">
+    <div class="panel body-wrap">
+      <h2>СОСТОЯНИЕ ТЕЛА</h2>
+      
+      <div id="alert-msg" style="color:#ff3b3b; font-size:0.75rem; font-weight:bold; text-align:center; min-height:2.4em; margin-bottom:4px; max-width:170px; display:flex; align-items:center; justify-content:center;"></div>
+      
+      <svg viewBox="0 0 120 220" aria-label="Схема тела">
+        <circle id="p-head" class="part s0" cx="60" cy="24" r="18" tabindex="0" role="button" aria-label="Голова"/>
+        <rect id="p-torso" class="part s0" x="36" y="46" width="48" height="66" rx="10" tabindex="0" role="button" aria-label="Торс"/>
+        <rect id="p-larm" class="part s0" x="8" y="48" width="22" height="70" rx="10" tabindex="0" role="button" aria-label="Левая рука"/>
+        <rect id="p-rarm" class="part s0" x="90" y="48" width="22" height="70" rx="10" tabindex="0" role="button" aria-label="Правая рука"/>
+        <rect id="p-lleg" class="part s0" x="36" y="116" width="23" height="94" rx="10" tabindex="0" role="button" aria-label="Левая нога"/>
+        <rect id="p-rleg" class="part s0" x="61" y="116" width="23" height="94" rx="10" tabindex="0" role="button" aria-label="Правая нога"/>
+      </svg>
+      <div class="hint">Нажмите на часть тела, чтобы добавить рану</div>
+      <div class="wp" id="wp"></div>
+      <div id="anom-injury" style="margin-top:8px;padding:6px;border:1px dashed #8c7650;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.78rem;">
+        <b>Аномалия:</b> <select id="anom-type" aria-label="Название аномалии"></select> <small id="anom-desc" style="opacity:.8"></small>
+        <input type="number" id="anom-n" min="1" max="8" value="2" style="width:56px" aria-label="Число ожогов" title="Число ожогов (только для ожогов)">
+        <button class="t" id="anom-btn">Аномалия</button>
+        <span id="lost-list"></span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="vit">
+        <div style="font-weight:bold;letter-spacing:.1em">ЖИЗНЕДЕЯТЕЛЬНОСТЬ</div>
+        <div class="vrow"><span>Пульс</span><input type="range" min="0" max="120" data-k="pulse" data-def="70"><input type="number" min="0" max="120" data-k="pulse" data-def="70"></div>
+        <div class="vrow"><span>Кислород %</span><input type="range" min="0" max="100" data-k="o2" data-def="200"><input type="number" min="0" max="100" data-k="o2" data-def="100"></div>
+        
+        <div class="vrow"><span>Голод %</span><input type="range" min="0" max="100" data-k="hunger" data-def="200"><input type="number" min="0" max="100" data-k="hunger" data-def="100"></div>
+        <div class="vrow"><span>Жажда %</span><input type="range" min="0" max="100" data-k="thirst" data-def="200"><input type="number" min="0" max="100" data-k="thirst" data-def="100"></div>
+        <div class="vrow"><span>Бодрость %</span><input type="range" min="0" max="100" data-k="energy" data-def="200"><input type="number" min="0" max="100" data-k="energy" data-def="100"></div>
+        
+        <!-- ШКАЛА РАДИАЦИИ -->
+        <div class="vrow" id="rad-vrow"><span>Радиация мЗв</span><input type="range" min="0" max="100" data-k="rad" data-def="0"><input type="number" min="0" max="100" data-k="rad" data-def="0"></div>
+        
+        <!-- ШКАЛА ИНФЕКЦИИ -->
+        <div class="vrow" id="inf-vrow"><span>Инфекция %</span><input type="range" min="0" max="100" data-k="infection" data-def="0"><input type="number" min="0" max="100" data-k="infection" data-def="0"></div>
+
+        <div class="effects" id="effects"></div>
+        <div class="clock">
+          
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <svg id="clock-face" width="46" height="46" viewBox="0 0 44 44" role="img" aria-label="Часы">
+                <circle id="cf-bg" cx="22" cy="22" r="20" fill="#0b2a15" stroke="#1d5a30" stroke-width="2"/>
+                <g stroke="#3bff6a" stroke-width="1.6" stroke-linecap="round">
+                  <line x1="22" y1="4.5" x2="22" y2="8"/><line x1="39.5" y1="22" x2="36" y2="22"/>
+                  <line x1="22" y1="39.5" x2="22" y2="36"/><line x1="4.5" y1="22" x2="8" y2="22"/>
+                </g>
+                <line id="cf-h" x1="22" y1="22" x2="22" y2="12" stroke="#e8d9b5" stroke-width="2.4" stroke-linecap="round"/>
+                <line id="cf-m" x1="22" y1="22" x2="22" y2="7" stroke="#3bff6a" stroke-width="1.6" stroke-linecap="round"/>
+                <circle cx="22" cy="22" r="1.8" fill="#e8d9b5"/>
+              </svg>
+              <div style="line-height:1.25">
+                <b id="clock"></b><br>
+                <b id="clock-phase" style="font-size:.78rem; letter-spacing:.12em"></b><br>
+                <span id="clock-weather" style="font-size:.74rem"></span>
+              </div>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <b id="armor-val" style="color:var(--rust); font-size:1rem; letter-spacing:0.05em; text-shadow:0 0 2px #000;">БРОНЯ: 0</b>
+              <b id="radprot-val" style="color:#3bff6a; font-size:1rem; letter-spacing:0.05em; text-shadow:0 0 2px #000;">ЗАЩИТА: 0</b>
+            </div>
+          </div>
+
+          <div class="tb"><button class="t" data-adv="0.5">+30 мин</button><button class="t" data-adv="1">+1 ч</button><button class="t" data-adv="4">+4 ч</button><button class="t" data-adv="8">+8 ч</button><button class="t" data-sleep="8">Сон 8 ч</button></div>
+          <div class="tb"><input type="number" id="adv-n" min="0.5" step="0.5" value="2" aria-label="Часов"> ч <button class="t" id="adv-go">Пропустить время</button></div>
+          <div class="tb"><label class="forage"><input type="checkbox" id="forage-on"> Собирать хворост в дороге</label> <span id="forage-hint"></span></div>
+          <div class="tb rates">Расход в час: голод <input type="number" step="0.5" min="0" data-k="r_hunger" data-def="4"> жажда <input type="number" step="0.5" min="0" data-k="r_thirst" data-def="6"> бодрость <input type="number" step="0.5" min="0" data-k="r_energy" data-def="5"> фон радиации <input type="number" step="0.5" min="0" data-k="r_rad_env" data-def="2"></div>
+          <div class="tmsg" id="tmsg" role="status"></div>
+        </div>
+      </div>
+      
+      <!-- ПАНЕЛЬ ХАРАКТЕРИСТИК -->
+      <div class="panel" style="margin:0;background:#efe3c4;color:var(--ink)">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+          <h2 style="color:var(--ink); margin:0;">ХАРАКТЕРИСТИКИ</h2>
+          <b id="points-val" style="font-size:0.9rem; color:#8c2020;">ОЧКИ: 20/20</b>
+        </div>
+        <div id="stats"></div>
+      </div>
+
+      <div class="panel">
+    <h2>ЧЕРТЫ ХАРАКТЕРА</h2>
+    <div class="campbox" id="traits-body"></div>
+  </div>
+
+  <div class="panel" style="margin:0; background:#2b211a; border:2px solid #8c7650;">
+        <h2 style="color:#e8d9b5">ОРУЖИЕ К БОЮ</h2>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="t" id="d100-btn">Бросок d100</button>
+          <b id="d100-res" style="font-size:1.15rem;min-width:3.2ch"></b>
+          <span id="d100-lbl" style="font-size:.72rem;letter-spacing:.06em"></span>
+          <span id="d100-hist" style="font-size:.7rem;opacity:.7"></span>
+        </div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:.78rem;font-weight:bold;margin-bottom:8px;padding:6px;border:1px dashed #8c7650;">
+          <input type="checkbox" id="cover-on"> Противник за укрытием <span style="font-weight:normal;opacity:.7;font-size:.7rem">(штраф к шансу попадания)</span>
+        </label>
+        <div id="aim-info" style="margin-bottom:8px;padding:6px;border:1px solid #4a3a2c;background:#14100c;font-size:.75rem;"></div>
+        <div id="move-speed" style="margin-bottom:8px;padding:6px;border:1px solid #4a3a2c;background:#14100c;"></div>
+        <div id="combat-panel" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+      
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>СНАРЯЖЕНИЕ</h2>
+    <div class="eq" id="eq"></div>
+  </div>
+
+  <div class="panel">
+    <h2>ИНВЕНТАРЬ</h2>
+    <div class="addbar">
+      <select id="add-cat" aria-label="Категория">
+        <option value="med">Еда и Медицина</option>
+        <option value="gear">Снаряжение и ОМ</option>
+        <option value="weapon">Оружие и Боеприпасы</option>
+        <option value="artifact">Артефакты</option>
+      </select>
+      <select id="add-item" aria-label="Предмет"></select>
+      <select id="add-to" aria-label="Куда"></select>
+      <button class="t" id="add-btn">Добавить</button>
+    </div>
+    <div class="msg" id="msg" role="status"></div>
+    <div class="msg" id="load" style="color:#c9a24a"></div>
+    <div class="grids" id="grids"></div>
+    <div id="ground-sec" style="margin-top:10px;padding:8px;border:1px dashed #8c7650;background:#1a130e;">
+      <div style="font-size:.72rem;font-weight:bold;letter-spacing:.14em;color:#c9a24a;margin-bottom:6px;">ЗЕМЛЯ <span style="font-weight:normal;opacity:.75;letter-spacing:.04em">(отдел инвентаря: вещи пропадают при пропуске времени)</span></div>
+      <div class="campbox" id="ground-body"></div>
+    </div>
+    <div class="info" id="info"></div>
+  </div>
+
+<div class="panel">
+    <h2 id="camp-h" role="button" tabindex="0" aria-expanded="true" style="cursor:pointer">ПРИВАЛ <span id="camp-tg" style="font-size:.7rem;opacity:.75;letter-spacing:.05em">[свернуть]</span></h2>
+    <div class="campbox" id="camp-body"></div>
+  </div>
+
+  <div class="panel">
+    <h2>МАСТЕРСКАЯ: КРАФТ И РЕМОНТ</h2>
+    <div class="campbox" id="craft-body"></div>
+  </div>
+
+  <div class="panel">
+    <h2>ЖУРНАЛ ЗАДАНИЙ</h2>
+    <div class="campbox">
+      <div class="fireRow">
+        <input id="q-t" placeholder="Название задания" maxlength="80" style="flex:1 1 180px" aria-label="Название задания">
+        <input id="q-r" type="number" min="0" step="10" placeholder="Награда, ₮" style="width:110px" aria-label="Награда в тугриках">
+        <input id="q-h" type="number" min="0" step="0.5" placeholder="Срок, ч" style="width:90px" title="Срок в часах (можно не указывать)" aria-label="Срок в часах">
+      </div>
+      <div class="fireRow">
+        <input id="q-d" placeholder="Описание (необязательно)" maxlength="240" style="flex:1 1 260px" aria-label="Описание">
+        <button class="t" id="q-add">Добавить задание</button>
+      </div>
+      <div id="quests-list"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>ТОКЕН НА КАРТЕ</h2>
+    <div class="campbox" id="token-body"></div>
+  </div>
+
+  <div class="panel">
+    <h2>КОМНАТА (ОБЩИЙ ПРИВАЛ)</h2>
+    <div class="campbox" id="room-body"></div>
+  </div>
+
+  <div class="panel">
+    <h2>ТУГРИКИ И ЛАВКА СНАРЯЖЕНИЯ</h2>
+    <div class="wallet">
+      <b>Кошелёк (тугрики ₮):</b>
+      <input type="number" min="0" step="1" data-k="tugr" data-def="200" aria-label="Тугрики">
+      <span style="opacity:.7;font-size:.7rem">Стартовый капитал — 200 ₮. Сумму можно править вручную.</span>
+    </div>
+    <label class="trader"><input type="checkbox" id="trader-on"> <b>Торговец рядом</b> <span style="opacity:.7;font-size:.7rem">(включайте, только когда персонажи у торговца: откроются покупка, продажа и цены)</span></label>
+    <div class="msg" id="trader-off" style="color:#c9a24a">Торговца поблизости нет. Цены и продажа недоступны.</div>
+    <div id="shop-body">
+    <div class="shoptabs" id="shop-tabs"></div>
+    <div class="shopopts">
+      <span>Кол-во:</span><input type="number" id="shop-qty" min="1" max="30" value="1">
+      <span>Положить в:</span><select id="shop-to"></select>
+      <label><input type="checkbox" id="shop-equip"> сразу надеть/взять в руки</label>
+    </div>
+    <div class="msg" id="shop-msg" role="status"></div>
+    <div class="shoplist" id="shop-list"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>РАДИОСВЯЗЬ И КОНТАКТЫ</h2>
+    <div class="campbox" id="radio-known"></div>
+    <div id="contacts-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;"></div>
+    <div style="display:flex; gap:6px;">
+      <input type="text" id="new-contact-name" placeholder="Имя / Позывной" style="flex:1; background:var(--metal2); border:1px solid #14100c; color:#e8d9b5; font:inherit; padding:5px; font-size:0.75rem;">
+      <input type="text" id="new-contact-freq" placeholder="Частота / Статус" style="width:110px; background:var(--metal2); border:1px solid #14100c; color:#e8d9b5; font:inherit; padding:5px; font-size:0.75rem;">
+      <button class="t" id="add-contact-btn">Добавить</button>
+    </div>
+  </div>
+
+  <div class="panel notes">
+    <h2>ЗАМЕТКИ</h2>
+    <textarea data-k="notes" placeholder="Предыстория, цели, травмы…"></textarea>
+  </div>
+</div>
+
+<script>
+(function(){
+  var KEY='nri-sheet-v1', S={};
+  try{ S=JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){ S={}; }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+
+  function showAlert(txt, isErr) {
+    var el = document.getElementById('alert-msg');
+    el.style.color = (isErr === false) ? '#3bff6a' : '#ff3b3b'; 
+    el.textContent = txt;
+    clearTimeout(el.to);
+    el.to = setTimeout(function(){ el.textContent = ''; }, 15000);
+  }
+
+  document.querySelectorAll('[data-k]').forEach(function(el){
+    var k=el.dataset.k, v=S[k]!==undefined?S[k]:el.dataset.def;
+    if(v!==undefined) el.value=v;
+    el.addEventListener('input',function(){
+      S[k]=el.value; save();
+      document.querySelectorAll('[data-k="'+k+'"]').forEach(function(o){ if(o!==el) o.value=el.value; });
+    });
+  });
+
+  var PN={head:'Голова',torso:'Торс',larm:'Левая рука',rarm:'Правая рука',lleg:'Левая нога',rleg:'Правая нога'};
+  var WT={cut:['Рваная рана','Кровотечение: нужна перевязка.','Рваная'],gun:['Огнестрельное ранение','Пуля в теле: нужна медпомощь.','Огнестрел'],burn:['Ожог','Боль и риск заражения: нужна повязка.','Ожог'],
+    ache:['Головная боль','Давит в висках: помехи к концентрации. Пульс ≥ 90.','Боль',1],
+    ears:['Кровь из ушей','Тяжёлая травма головы. Пульс ≥ 100.','Уши',1]};
+  var WW={cut:5,gun:8,burn:6}; 
+  var WR={cut:5,gun:4.5,burn:4}; 
+  
+  function woundDrain(){
+    var total=0;
+    Object.keys(PN).forEach(function(id){
+      wList(id).forEach(function(w){
+        var drain=WR[w.t]||0;
+        total += drain * (w.s||1);
+      });
+    });
+    return total;
+  }
+  function pulseAdd(d){
+    var p=parseFloat(S.pulse); if(isNaN(p))p=70;
+    setV('pulse',Math.max(0,Math.min(120,Math.round(p+d))));
+  }
+  function checkHead(){
+    var p=parseFloat(S.pulse); if(isNaN(p))p=70;
+    var changed=false, note='';
+    [['ache',90],['ears',100]].forEach(function(r){
+      var hl=wList('head'), has=hl.some(function(w){return w.t===r[0];});
+      if(p>=r[1]&&!has){hl.push({t:r[0],s:1,auto:1});changed=true;note='Пульс '+Math.round(p)+': '+WT[r[0]][0].toLowerCase()+' (голова).';}
+      else if(p<r[1]&&has){
+        S.wounds.head=hl.filter(function(w){return !(w.t===r[0]&&w.auto);});
+        if(S.wounds.head.length!==hl.length)changed=true;
+      }
+    });
+    if(changed){save();paintBody();var t=document.getElementById('tmsg');if(t&&note)t.textContent=note;}
+  }
+  S.wounds=S.wounds||{};
+  var curPart=null;
+  function wList(id){return S.wounds[id]=S.wounds[id]||[];}
+  function wScore(id){return wList(id).reduce(function(a,w){return a+w.s;},0);}
+  function mk(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;}
+  function paintBody(){
+    Object.keys(PN).forEach(function(id){
+      var sc=wScore(id), st=sc===0?0:sc===1?1:sc<4?2:3;
+      document.getElementById('p-'+id).setAttribute('class','part s'+st+(curPart===id?' cur':'')+(S.lost&&S.lost[id]?' lost':(S.prosth&&S.prosth[id]?' prosth':'')));
+    });
+    var el=document.getElementById('wp'); el.innerHTML='';
+    if(curPart&&S.lost&&S.lost[curPart]){
+      el.appendChild(mk('b','',PN[curPart]));
+      el.appendChild(mk('div','wsum','Конечность потеряна. Раны здесь не наносятся.'));
+    } else if(curPart){
+      el.appendChild(mk('b','',PN[curPart]));
+      Object.keys(WT).forEach(function(t){
+        if(WT[t][3])return;
+        var b=mk('button','t','+ '+WT[t][2]);
+        b.onclick=function(){wList(curPart).push({t:t,s:1});save();pulseAdd(-(WW[t]||0));paintBody();};
+        el.appendChild(b);
+      });
+      wList(curPart).forEach(function(w,i){
+        var d=mk('div','wd'), b=mk('button','t',WT[w.t][0]+' ('+(w.s>1?'тяжёлая':'лёгкая')+')'), x=mk('button','t','×');
+        b.title=WT[w.t][1]+' Клик меняет тяжесть.';
+        b.onclick=function(){var o=w.s;w.s=w.s>1?1:2;save();pulseAdd(-(WW[w.t]||0)*(w.s-o));paintBody();};
+        x.setAttribute('aria-label','Как лечить');
+        x.onclick=function(){showAlert('Нажмите "Использовать" на медикаменте или перетащите его сюда.', true);};
+        d.appendChild(b);d.appendChild(x);el.appendChild(d);
+      });
+    }
+    var lines=Object.keys(PN).filter(function(id){return wList(id).length;}).map(function(id){
+      return PN[id]+': '+wList(id).map(function(w){return WT[w.t][0].toLowerCase()+(w.s>1?' (тяж.)':'');}).join(', ');
+    });
+    if(lines.length)el.appendChild(mk('div','wsum','Все раны:\n'+lines.join('\n')));
+    if(!peBusy)paintEffects();
+  }
+  Object.keys(PN).forEach(function(id){
+    var el=document.getElementById('p-'+id);
+    function pick(){curPart=curPart===id?null:id;paintBody();}
+    el.addEventListener('click',pick);
+    el.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); pick(); } });
+  });
+  paintBody();
+
+  var painters=[];
+  var stats=[['str','Сила'],['con','Телосложение'],['int','Интеллект'],['sur','Выживание']];
+  var box=document.getElementById('stats');
+  var MAX_POINTS = 20;
+
+  function updatePointsUI() {
+    var spent = (S['st_str']||0) + (S['st_con']||0) + (S['st_int']||0) + (S['st_sur']||0);
+    var avail = MAX_POINTS - spent;
+    var el = document.getElementById('points-val');
+    if(el) el.textContent = 'ОЧКИ: ' + avail + '/' + MAX_POINTS;
+  }
+
+  stats.forEach(function(s){
+    var row=document.createElement('div'); row.className='stat';
+    row.innerHTML='<span>'+s[1]+'</span><div class="segs"></div><output></output><div class="why"></div><div class="why bon"></div>';
+    var segs=row.querySelector('.segs'), out=row.querySelector('output'), why=row.querySelector('.why:not(.bon)'), bwhy=row.querySelector('.why.bon');
+    
+    function paint(){
+      var v=S['st_'+s[0]]||0, pen=penalties()[s[0]]||0, bon=bonuses()[s[0]]||0, eff=v-pen+bon;
+      out.textContent=eff+(pen?' (−'+pen+')':'')+(bon?' (+'+bon+')':'');
+      out.className=pen&&!bon?'pen':(bon&&!pen?'bon':'');
+      why.textContent=pen?('Штраф '+s[1]+' −'+pen+': '+penaltyWhy(s[0])):'';
+      bwhy.textContent=bon?('Бонус '+s[1]+' +'+bon+': сытная горячая еда, ещё '+Math.ceil(numS('fed'))+' ч'):'';
+      segs.childNodes.forEach(function(b,i){ b.classList.toggle('on',i<eff); b.classList.toggle('pen',i>=eff&&i<v); b.classList.toggle('bon',i>=v&&i<eff); });
+    }
+    painters.push(paint);
+    
+    for(var i=1;i<=10;i++){
+      (function(i){
+        var b=document.createElement('button'); b.className='seg'; b.setAttribute('aria-label',s[1]+' '+i);
+        b.onclick=function(){ 
+          var oldVal = S['st_'+s[0]] || 0;
+          var newVal = (oldVal === i) ? i - 1 : i;
+          var diff = newVal - oldVal;
+          
+          if (diff > 0) {
+            var spent = (S['st_str']||0) + (S['st_con']||0) + (S['st_int']||0) + (S['st_sur']||0);
+            if (spent + diff > MAX_POINTS) {
+              showAlert('Недостаточно свободных очков характеристик!', true);
+              return;
+            }
+          }
+          
+          S['st_'+s[0]] = newVal; 
+          paint(); 
+          updatePointsUI();
+          save(); 
+          if(window.__inv)window.__inv(); 
+        };
+        segs.appendChild(b);
+      })(i);
+    }
+    box.appendChild(row); paint();
+  });
+  updatePointsUI();
+  window.__statPaint=function(){painters.forEach(function(f){f();});};
+
+  var C=38;
+  function I(n,w,h,st,c,s,d,use){return{n:n,w:w,h:h,st:st,c:c,s:s,d:d,use:use};}
+  
+  var CAT={
+    firstaid:I('Аптечка',1,2,1,'med','АП','Универсальная. Лечит любую рану.'),
+    spray:I('Спрей',1,2,1,'med','СП','Лечит ожоги и рваные раны.'),
+    bandage:I('Бинт',1,1,3,'med','БН','Останавливает кровотечение (рваные раны).'),
+    ointment:I('Мазь от ожогов',1,1,3,'med','МЗ','Специализированный крем. Лечит ожоги.'),
+    tweezers:I('Хирургич. набор',1,2,1,'med','ХН','Извлекает пули (огнестрел). Не тратится.'),
+    tourniquet:I('Жгут',1,1,2,'med','ЖГ','Останавливает сильное кровотечение.'),
+    antiseptic:I('Антисептик',1,1,3,'med','АНТ','Очищает кровь от инфекции, снижает заражение на 35%.', function(){
+      var curInf = parseFloat(S.infection) || 0;
+      setV('infection', Math.max(0, curInf - 35));
+      showAlert('Применен антисептик: раны продезинфицированы, инфекция снижена.', false);
+    }),
+    antibiotic:I('Антибиотики',1,1,3,'med','АБ','Курс на сутки: замедляет рост инфекции и постепенно снижает её. Курсы суммируются до 2 суток.', function(){
+      S.abx=Math.min(48,numS('abx')+24); save(); paintEffects();
+      showAlert('Начат курс антибиотиков: инфекция отступает, действие ещё '+S.abx+' ч.', false);
+    }),
+    adrenaline:I('Адреналин',1,1,3,'med','АД','Автоинъектор. +40 пульс, +40 бодрость.', function(){ pulseAdd(40); setV('energy', clamp(getV('energy')+40)); showAlert('Адреналин введен: пульс и бодрость подскочили!', false); }),
+    betablock:I('Бета-блокаторы',1,1,5,'med','ББ','Таблетки. Резко снижают пульс (−40).', function(){ pulseAdd(-40); showAlert('Бета-блокаторы приняты: пульс падает.', false); }),
+    inhibitor:I('Ингибиторы',1,1,3,'med','ИН','Снижают пульс (−10), +20% к сытости и воде.', function(){ pulseAdd(-10); setV('hunger', clamp(getV('hunger')+20)); setV('thirst', clamp(getV('thirst')+20)); showAlert('Ингибиторы приняты: метаболизм стабилизирован.', false); }),
+    pills:I('Обезболивающее',1,1,5,'med','ТБ','Снимает боль, снижает пульс (−15).', function(){ pulseAdd(-15); showAlert('Обезболивающее принято: стало легче.', false); }),
+    antirad:I('Антирад',1,1,5,'med','АР','Препарат. Снижает дозу радиации на 30 мЗв.', function(){ 
+      var currentRad = parseFloat(S.rad) || 0;
+      var cut = numS('infection')>=50 ? 15 : 30;
+      setV('rad', Math.max(0, currentRad - cut));
+      if(cut<30) showAlert('Антирад подействовал слабо: ослабленный инфекцией организм плохо выводит радиацию.', true);
+      else showAlert('Принят Антирад: доза радиации снижена.', false);
+    }),
+    ration:I('Паёк',1,1,3,'med','ПЁ','Утоляет голод на 30%.',{hunger:30}),
+    water:I('Бутылка воды',1,2,1,'med','ВД','Утоляет жажду на 35%.',{thirst:35}),
+    
+    wild_carrot:I('Дикая морковь',1,1,5,'med','МР','Корнеплод. +10% голода, +5% жажды.', {hunger:10, thirst:5}),
+    potato:I('Картошка',1,1,5,'med','КР','Сырой клубень. +15% голода.', {hunger:15}),
+    coffee:I('Кофе',1,1,3,'med','КФ','Бодрящий напиток. +20% бодрости, +15% жажды, +10 пульс.', function(){ setV('energy', clamp(getV('energy')+20)); setV('thirst', clamp(getV('thirst')+15)); pulseAdd(10); showAlert('Выпит кофе: бодрость повышена.', false); }),
+    energy_drink:I('Энергетик',1,1,3,'med','ЭН','Энергетический напиток. +45% бодрость, +10% жажды, +20 пульс.', function(){ setV('energy', clamp(getV('energy')+45)); setV('thirst', clamp(getV('thirst')+10)); pulseAdd(20); showAlert('Выпит энергетик! Сердце колотится.', false); }),
+    vodka:I('Водка',1,2,3,'med','ВДК','Крепкий алкоголь. Жажда +10%, снимает стресс, но накладывает ГОЛОВОКРУЖЕНИЕ (пульс −20, бодрость −25).', function(){ setV('thirst', clamp(getV('thirst')+10)); pulseAdd(-20); setV('energy', clamp(getV('energy')-25)); showAlert('Вы выпили водки: в глазах двоится, навалилось сильное головокружение!', true); }),
+
+    gasmask:I('Противогаз',2,2,1,'gear','ПГ','Защищает дыхательные пути от радиации и токсинов.'),
+    rad_suit:I('Костюм ОЗК',2,3,1,'gear','ОЗК','Костюм химзащиты. Защита от радиации: 6.'),
+    flashlight:I('Фонарик',1,2,1,'gear','ФН','Источник света. Расходует заряд в часах.'),
+    helmet:I('Каска',2,2,1,'gear','КС','Слот «Голова». Защита: 2.'),
+    vest:I('Бронежилет',2,3,1,'gear','БЖ','Слот «Торс». Защита: 3.'),
+    heavy_vest:I('Штурм. броня',2,3,1,'gear','ШБ','Слот «Торс». Тяжелая защита: 5.'),
+    bag:I('Сумка',2,2,1,'gear','СМ','Слот «Спина». Дает +1 ряд.'),
+    rucksack:I('Походный рюкзак',2,3,1,'gear','РК','Слот «Спина». Дает +2 ряда.'),
+    gbelt:I('Ремень',3,1,1,'gear','РМ','Тактический ремень. Слот «Пояс».'),
+    twigs:I('Ветки',1,1,10,'gear','ВТ','Сухие ветки. Каждая добавляет костру полчаса горения.'),
+    logs:I('Поленья',1,2,3,'gear','ПЛН','Крепкие поленья. Каждое добавляет костру 2 часа горения.'),
+    detector:I('Детектор аномалий',1,2,1,'gear','ДТ','Помогает находить артефакты и обходить опасные места.'),
+    drops:I('Капли',1,1,1,'artifact','КП','Застывшие капли. Слегка фонят. Торговцы берут охотно.'),
+    jelly:I('Медуза',1,1,1,'artifact','МД','Студенистый артефакт. Заметно фонит. Хорошо продаётся.'),
+    spark:I('Искра',1,1,1,'artifact','ИС','Потрескивает. Фонит сильнее. Дорого ценится.'),
+    stoneflower:I('Каменный цветок',1,1,1,'artifact','КЦ','Редкость. Вытягивает радиацию из носителя. Очень дорогой.'),
+    moonlight:I('Лунный свет',1,1,1,'artifact','ЛС','Светится в темноте. Сильно фонит. Огромная ценность.'),
+    compass:I('Компас-аномалия',1,2,1,'artifact','КА','Стрелка крутится сама. Опасно фонит. Самая дорогая находка.'),
+    artcase:I('Контейнер для артефактов',2,2,1,'gear','КОН','Свинцовый кейс. Артефакты внутри не влияют на носителя.'),
+    bolts:I('Болты',1,1,20,'gear','БЛ','Металлические болты. Бросьте вперёд, чтобы проверить путь на аномалии.'),
+    prosth_arm:I('Протез руки',1,3,1,'gear','ПРР','Механический протез. Ставится на место потерянной руки. Использовать.', function(){return installProsth(['larm','rarm']);}),
+    prosth_leg:I('Протез ноги',1,3,1,'gear','ПРН','Механический протез. Ставится на место потерянной ноги. Использовать.', function(){return installProsth(['lleg','rleg']);}),
+    pebble:I('Галька',1,1,1,'artifact','ГЛ','Гладкий камешек. Едва фонит. Дёшево, но хорошо идёт оптом.'),
+    shell:I('Ракушка',1,1,1,'artifact','РК','Витая раковина. Слабо фонит. Торговцы берут.'),
+    thorn:I('Колючка',1,1,1,'artifact','КЛ','Острый шип. Фонит заметно. Неплохая цена.'),
+    firefly:I('Светляк',1,1,1,'artifact','СВ','Мерцает в темноте. Фонит. Хорошо продаётся.'),
+    frostmoss:I('Ледяной мох',1,1,1,'artifact','ЛМ','Холодный мох. Слегка вытягивает радиацию. Дорогой.'),
+    amber:I('Янтарь аномалий',1,1,1,'artifact','ЯН','Тёплый янтарь с застывшим светом. Слабо фонит. Дорогой.'),
+    heartstone:I('Каменное сердце',1,1,1,'artifact','КС','Бьётся, как живое. Сильно фонит. Очень дорогое.'),
+    crown:I('Корона',1,2,1,'artifact','КР','Терновый венец из аномалии. Опасно фонит. Баснословная цена.'),
+    cloth:I('Тряпки',1,1,10,'gear','ТР','Обрывки ткани. Годятся для бинтов и фильтров.'),
+    scrap:I('Металлолом',1,1,10,'gear','МЛ','Куски железа. Нужны для ремонта и самоделок.'),
+    repairkit:I('Ремкомплект',1,1,3,'gear','РМК','Набор для ремонта. Один расходуется на попытку починки.'),
+    sleeping_bag:I('Спальник',2,2,1,'gear','СПЛ','Тёплый спальник: на привале защищает от простуды и улучшает отдых.'),
+    tent:I('Палатка',2,3,1,'gear','ПЛК','Палатка: почти полностью защищает от простуды и даёт лучший отдых.'),
+    pot:I('Котелок',1,2,1,'gear','КТЛ','Нужен, чтобы готовить еду на костре.'),
+    matches:I('Спички',1,1,10,'gear','СПЧ','Нужны, чтобы развести костёр. Одна штука на костёр. Продаются поштучно и коробками.'),
+    salt:I('Соль',1,1,5,'med','СЛ','Приправа: улучшает блюдо в котелке.', function(){showAlert('Просто так соль не съешь. Добавьте её в котелок.',true);return false;}),
+    meat_raw:I('Сырое мясо',1,1,3,'med','МС','Мясо. Лучше сварить: сырым есть опасно.', function(){
+      setV('hunger',clamp(getV('hunger')+15));
+      if(Math.random()<0.5){setV('infection',clamp(getV('infection')+15));showAlert('Вы съели сырое мясо: скрутило живот, инфекция выросла.',true);}
+      else showAlert('Вы съели сырое мясо. В этот раз обошлось.',false);
+    }),
+    mushrooms:I('Грибы',1,1,5,'med','ГБ','Лесные грибы. Что-то в них может быть не так.', function(){
+      setV('hunger',clamp(getV('hunger')+8));
+      if(Math.random()<0.25){setV('infection',clamp(getV('infection')+15));setV('thirst',clamp(getV('thirst')-15));showAlert('Грибы оказались плохими: отравление!',true);}
+      else showAlert('Вы съели грибы. Обошлось.',false);
+    }),
+    grain:I('Крупа',1,1,5,'med','КП','Сухая крупа. Нужна вода и огонь.', function(){showAlert('Сухую крупу не съесть. Сварите кашу в котелке.',true);return false;}),
+    canned:I('Консервы',1,1,3,'med','КН','Готовая еда. Можно есть сразу или добавить в котелок.',{hunger:25}),
+    stew:I('Похлёбка',1,1,1,'med','ПХ','Горячая похлёбка. Утоляет голод и жажду, согревает, даёт Силу +1 и помогает против инфекции.', function(o){return eatDish(o,{hunger:35,thirst:15});}),
+    porridge:I('Каша',1,1,1,'med','КШ','Горячая каша. Сытная, согревает, даёт Силу +1 и помогает против инфекции.', function(o){return eatDish(o,{hunger:30,thirst:10});}),
+    roast:I('Жаркое',1,1,1,'med','ЖР','Жаркое без воды. Очень сытное, согревает, даёт Силу +1 и помогает против инфекции.', function(o){return eatDish(o,{hunger:40});}),
+    slop:I('Бурда',1,1,1,'med','БР','Странная смесь. Почти не насыщает.', function(o){return eatDish(o,{hunger:10,warm:false});}),
+    key:I('Ключ',1,1,1,'key','КЛ','Ключевой предмет, выбросить нельзя.'),
+
+    pistol:I('Пистолет',2,2,1,'weapon','ПИ','Табельный пистолет. Магазин на 15 патронов.'),
+    shotgun:I('Дробовик',1,4,1,'weapon','ДР','Двуручное. Мощный, но тяжёлый и громкий. Магазин 6.'),
+    axe:I('Топор',1,3,1,'weapon','ТП','Ближний бой. Если держать в руках, у костра можно рубить сухостой: хворост не заканчивается.'),
+    knife:I('Нож',1,2,1,'weapon','НЖ','Бесшумное оружие ближнего боя.'),
+    filter:I('Фильтр',1,1,5,'ammo','ФЛ','Сменный фильтр для противогаза.'),
+    battery:I('Батарейки',1,1,4,'ammo','БТ','Используются для перезарядки фонарика.'),
+    ammo:I('Патроны 9 мм',1,1,30,'ammo','ПТ','Патроны к пистолету.'),
+    shells:I('Дробь',1,1,12,'ammo','ДБ','Патроны 12 калибра для дробовика.'),
+    powder:I('Порох',1,1,5,'ammo','ПР','Порох + гильзы дают патроны.'),
+    casing:I('Гильзы',1,1,10,'ammo','ГЛ','Пустые гильзы для переснаряжения.')
+  };
+
+  var REC={'herbg+herbr':['mix',1],'herbg+herbg':['herbg2',1],'casing+powder':['ammo',10]};
+  var G={pack:{t:'Спина / Рюкзак',w:6},belt:{t:'Пояс и карманы',w:4,h:2},vault:{t:'Контейнер для артефактов',w:3,h:2}};
+  
+  CAT.helmet.slot='head'; CAT.helmet.arm = 2; CAT.helmet.radProt = 1;
+  CAT.vest.slot='armor'; CAT.vest.arm = 3;
+  CAT.heavy_vest.slot='armor'; CAT.heavy_vest.arm = 5; CAT.heavy_vest.radProt = 2;
+  
+  CAT.rad_suit.slot='armor'; CAT.rad_suit.arm = 2; CAT.rad_suit.radProt = 6;
+  CAT.gasmask.slot='face'; CAT.gasmask.radProt = 4; CAT.gasmask.isFilterable = true; CAT.gasmask.maxCharge = 12;
+
+  CAT.bag.slot='back'; CAT.rucksack.slot='back'; CAT.gbelt.slot='belt';
+  
+  CAT.pistol.maxMag = 15; CAT.pistol.ammoType = 'ammo';
+  CAT.shotgun.maxMag = 6; CAT.shotgun.ammoType = 'shells'; 
+  CAT.shotgun.twohanded = true;
+
+  CAT.flashlight.isLight = true;
+  CAT.flashlight.maxCharge = 10;
+
+  var SL=[
+    ['head','Голова'],['face','Лицо / Противогаз'],['armor','Броня / костюм'],['back','Спина / рюкзак'],['belt','Пояс'],
+    ['hand1','Левая рука'],['hand2','Правая рука'],['pocket1','Карман 1'],['pocket2','Карман 2']
+  ];
+  
+  function slotOk(k,o){var c=CAT[o.id];
+    if(k==='hand1'||k==='hand2')return !handLost(k)&&(c.c==='weapon' || o.id === 'flashlight');
+    if(k.indexOf('pocket')===0)return c.w*c.h<=2;
+    return c.slot===k;
+  }
+  
+  S.inv=S.inv||{}; ['pack','belt','vault'].forEach(function(g){S.inv[g]=S.inv[g]||[];});
+  SL.forEach(function(s){S.inv['eq_'+s[0]]=S.inv['eq_'+s[0]]||[];});
+  var sel=null, drag=null, gEls={};
+  
+  function gh(g){
+    if (g === 'pack') {
+      var baseSize = 2; 
+      var strBonus = Math.floor((S['st_str'] || 0) / 3);
+      var packBonus = 0;
+      var backSlot = S.inv['eq_back'] ? S.inv['eq_back'][0] : null;
+      if (backSlot) {
+        if (backSlot.id === 'rucksack') packBonus = 2;
+        else if (backSlot.id === 'bag') packBonus = 1;
+      }
+      return baseSize + strBonus + packBonus;
+    }
+    return G[g].h;
+  }
+  
+  function dim(o){var c=CAT[o.id];return o.r?{w:c.h,h:c.w}:{w:c.w,h:c.h};}
+  
+  function fits(g,o,x,y,skip){
+    if(g.indexOf('eq_')===0){
+      if(!slotOk(g.slice(3),o)) return false;
+      if(!S.inv[g].every(function(p){return p===skip||p===o;})) return false;
+      
+      if(g==='eq_hand1' || g==='eq_hand2'){
+        var other = (g==='eq_hand1') ? 'eq_hand2' : 'eq_hand1';
+        var othItem = S.inv[other][0];
+        if(othItem && othItem !== skip && othItem !== o){
+          if(CAT[o.id].twohanded || CAT[othItem.id].twohanded) return false;
+        }
+      }
+      return true;
+    }
+    if(g==='vault'&&(CAT[o.id].c!=='artifact'||!vaultOn()))return false;
+    var d=dim(o);
+    if(x<0||y<0||x+d.w>G[g].w||y+d.h>gh(g))return false;
+    return !S.inv[g].some(function(p){
+      if(p===skip||p===o)return false; var e=dim(p);
+      return x<p.x+e.w&&p.x<x+d.w&&y<p.y+e.h&&p.y<y+d.h;});
+  }
+
+  function auto(g,o){
+    if(g.indexOf('eq_')===0){o.r=0;if(!fits(g,o,0,0))return false;o.x=0;o.y=0;S.inv[g].push(o);return true;}
+    for(var r=0;r<2;r++){o.r=r;
+      for(var y=0;y<gh(g);y++)for(var x=0;x<G[g].w;x++)
+        if(fits(g,o,x,y)){o.x=x;o.y=y;S.inv[g].push(o);return true;}}
+    o.r=0;return false;
+  }
+  function msg(t){document.getElementById('msg').textContent=t||'';}
+  function listOf(o){for(var g in S.inv)if(S.inv[g].indexOf(o)>-1)return g;}
+  function drop(o){var g=listOf(o);if(g)S.inv[g].splice(S.inv[g].indexOf(o),1);}
+  function dec(o){o.n--; if(o.n<=0)drop(o);}
+  function commit(){save();render();}
+
+  function render(){
+    if(S.inv.box){ 
+      S.inv.box.forEach(function(o){o.x=0;o.y=0;o.r=0;if(!auto('pack',o)&&!auto('belt',o))toGround(o);});
+      delete S.inv.box; save();
+    }
+    ['pack','belt'].forEach(function(g){
+      S.inv[g].slice().forEach(function(o){
+        var d=dim(o);
+        if(o.x+d.w>G[g].w||o.y+d.h>gh(g)){
+          drop(o);
+          if(!auto(g,o) && !auto(g==='pack'?'belt':'pack',o)) {
+            S.inv.box = S.inv.box || [];
+            o.x = 0; o.y = 0; o.r = 0;
+            S.inv.box.push(o);
+            msg('Сумка снята! Не влезшие вещи упали на землю.');
+          }
+        }
+      });
+    });
+    if(!vaultOn()&&S.inv.vault.length){
+      S.inv.vault.slice().forEach(function(o){drop(o);o.x=0;o.y=0;o.r=0;if(!auto('pack',o)&&!auto('belt',o)){S.inv.box=S.inv.box||[];S.inv.box.push(o);}});
+      msg('Контейнера нет: артефакты вынуты в рюкзак.');
+    }
+    var root=document.getElementById('grids'); root.innerHTML=''; gEls={};
+    ['pack','belt'].concat(vaultOn()?['vault']:[]).forEach(function(g){
+      var w=document.createElement('div'); w.className='gwrap';
+      w.innerHTML='<span>'+G[g].t+'</span>';
+      var gr=document.createElement('div'); gr.className='gr';
+      gr.style.width=G[g].w*C+4+'px'; gr.style.height=gh(g)*C+4+'px';
+      gEls[g]=gr; if(g==='vault')gr.style.outline='2px solid #3bff6a';
+      S.inv[g].forEach(function(o){
+        var c=CAT[o.id], d=dim(o), el=document.createElement('div');
+        el.className='it '+c.c+(sel&&sel.o===o?' sel':'');
+        el.style.cssText='left:'+o.x*C+'px;top:'+o.y*C+'px;width:'+d.w*C+'px;height:'+d.h*C+'px';
+        if ((o.id === 'flashlight' || o.id === 'gasmask') && o.on) el.style.boxShadow = 'inset 0 0 10px #f2d03a';
+        
+        el.title=iname(o);
+        var ind = '';
+        if (o.id === 'flashlight' && o.on) ind = '<span style="position:absolute; top:2px; right:2px; font-size:0.7rem;">ВКЛ</span>';
+        if (o.id === 'gasmask' && o.on) ind = '<span style="position:absolute; top:2px; right:2px; font-size:0.7rem;">ВКЛ</span>';
+
+        el.innerHTML = ind + (d.w*d.h>1?c.n:c.s)+(c.st>1?'<span class="cnt">'+o.n+'</span>':'');
+        el.addEventListener('pointerdown',function(e){down(e,o,el);});
+        gr.appendChild(el);
+      });
+      w.appendChild(gr); root.appendChild(w);
+    });
+    renderEq();
+    paintLoad();
+    paintArmor();
+    paintCombat(); 
+    if(window.__camp)window.__camp();
+    showInfo();
+    if(window.__roomRepaint)window.__roomRepaint();
+    if(!peBusy)paintEffects();
+  }
+
+  function renderEq(){
+    var root=document.getElementById('eq'); root.innerHTML='';
+    SL.forEach(function(s){
+      var g='eq_'+s[0], d=document.createElement('div'); d.className='slot'+(handLost(s[0])?' lost':'');
+      var box=document.createElement('div'); box.className='sl'; gEls[g]=box;
+      S.inv[g].forEach(function(o){
+        var c=CAT[o.id], el=document.createElement('div');
+        el.className='it '+c.c+(sel&&sel.o===o?' sel':'');
+        el.style.cssText='left:0;top:0;width:100%;height:100%';
+        if ((o.id === 'flashlight' || o.id === 'gasmask') && o.on) el.style.boxShadow = 'inset 0 0 10px #f2d03a';
+
+        el.title=iname(o); 
+        var ind = '';
+        if (o.id === 'flashlight' && o.on) ind = '<span style="position:absolute; top:2px; right:2px; font-size:0.7rem;">ВКЛ</span>';
+        if (o.id === 'gasmask' && o.on) ind = '<span style="position:absolute; top:2px; right:2px; font-size:0.7rem;">ВКЛ</span>';
+
+        el.innerHTML = ind + c.n+(c.st>1?'<span class="cnt">'+o.n+'</span>':'');
+        el.addEventListener('pointerdown',function(e){down(e,o,el);});
+        box.appendChild(el);
+      });
+      var lb=document.createElement('span'); lb.textContent=s[1]+(handLost(s[0])?' (потеряна)':'');
+      d.appendChild(box); d.appendChild(lb); root.appendChild(d);
+    });
+  }
+  
+  function toSlot(o,g,r0){
+    var k=g.slice(3), cur=S.inv[g][0], from=listOf(o);
+    if(cur===o){o.r=r0;render();return;}
+    if(!slotOk(k,o)){o.r=r0;msg(handLost(k)?'Рука потеряна: сюда ничего не экипировать.':'Сюда это не надеть.');render();return;}
+    
+    if(k==='hand1' || k==='hand2'){
+      var other = (k==='hand1') ? 'eq_hand2' : 'eq_hand1';
+      var othItem = S.inv[other][0];
+      if(othItem && othItem !== o){
+        if(CAT[o.id].twohanded || CAT[othItem.id].twohanded){
+          o.r=r0; msg('Двуручное оружие требует обе свободные руки.'); render(); return;
+        }
+      }
+    }
+
+    if(cur){
+      if((cur.id===o.id&&CAT[o.id].st>1)||REC[[o.id,cur.id].sort().join('+')]){o.r=r0;interact(o,cur,g);return;}
+      var snap=JSON.stringify(S.inv);
+      drop(o);drop(cur);
+      S.inv[g].push(o);o.x=0;o.y=0;o.r=0;
+      if(!auto(from,cur)&&!auto('pack',cur)&&!auto('belt',cur)){S.inv=JSON.parse(snap);msg('Некуда убрать снятый предмет.');}
+      else msg('Обмен: '+CAT[o.id].n+' ⇄ '+CAT[cur.id].n);
+      commit();return;
+    }
+    drop(o);o.x=0;o.y=0;o.r=0;S.inv[g].push(o);msg('Надето: '+CAT[o.id].n);commit();
+  }
+  
+  function where(cx,cy){
+    for(var g in gEls){var r=gEls[g].getBoundingClientRect();
+      if(cx>=r.left&&cx<=r.right&&cy>=r.top&&cy<=r.bottom)return{g:g,r:r};}
+  }
+  function down(e,o,el){
+    e.preventDefault(); sel={o:o};
+    var r=el.getBoundingClientRect();
+    drag={o:o,el:el,ox:e.clientX-r.left,oy:e.clientY-r.top,sx:e.clientX,sy:e.clientY,r0:o.r,ph:null,pid:e.pointerId};
+    el.setPointerCapture(e.pointerId); el.classList.add('drag');
+    document.querySelectorAll('.it.sel').forEach(function(x){x.classList.remove('sel');}); el.classList.add('sel');
+    el.onpointermove=move; el.onpointerup=up; el.onpointercancel=cancel;
+    showInfo();
+  }
+  function cellAt(w,cx,cy){return{x:Math.floor((cx-w.r.left-2)/C),y:Math.floor((cy-w.r.top-2)/C)};}
+  function move(e){
+    if(!drag)return;
+    drag.el.style.transform='translate('+(e.clientX-drag.sx)+'px,'+(e.clientY-drag.sy)+'px)';
+    if(drag.ph){drag.ph.remove();drag.ph=null;}
+    var w=where(e.clientX,e.clientY); if(!w)return;
+    var x=Math.round((e.clientX-drag.ox-w.r.left-2)/C), y=Math.round((e.clientY-drag.oy-w.r.top-2)/C), d=dim(drag.o);
+    var ph=document.createElement('div'); var sl=w.g.indexOf('eq_')===0;
+    ph.className='ph '+((sl?slotOk(w.g.slice(3),drag.o):fits(w.g,drag.o,x,y))?'ok':'bad');
+    ph.style.cssText=sl?'left:0;top:0;width:100%;height:100%':'left:'+x*C+'px;top:'+y*C+'px;width:'+d.w*C+'px;height:'+d.h*C+'px';
+    gEls[w.g].appendChild(ph); drag.ph=ph;
+  }
+  function cancel(){ if(!drag)return; drag.o.r=drag.r0; drag=null; render(); }
+  
+  function applyMedicine(o, partId) {
+    var wounds = wList(partId);
+    
+    if (wounds.length === 0) {
+      dec(o); commit();
+      showAlert('Медикамент испорчен! Вы применили «' + CAT[o.id].n + '» на здоровую часть тела.', true);
+      return;
+    }
+
+    var rules = {
+      cut: ['bandage', 'tourniquet', 'spray', 'firstaid'], 
+      gun: ['tweezers', 'firstaid'],                       
+      burn: ['ointment', 'spray', 'firstaid']              
+    };
+
+    var healedIndex = -1;
+    for (var i = 0; i < wounds.length; i++) {
+      var w = wounds[i];
+      if (w.auto) continue; 
+      if (rules[w.t] && rules[w.t].indexOf(o.id) > -1) {
+        healedIndex = i; break;
+      }
+    }
+
+    if (healedIndex > -1) {
+      var w = wounds[healedIndex];
+      wounds.splice(healedIndex, 1);
+      pulseAdd((WW[w.t] || 0) * w.s); 
+      if (o.id !== 'tweezers') dec(o); 
+      paintBody(); commit();
+      msg(''); 
+      showAlert('Рана успешно вылечена: ' + CAT[o.id].n, false);
+    } else {
+      dec(o); commit();
+      showAlert('Паника! «' + CAT[o.id].n + '» не подходит для лечения таких ран. Медикамент испорчен.', true);
+    }
+  }
+
+  function up(e){
+    if(!drag)return; var o=drag.o, r0=drag.r0, moved=Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy)>4;
+    
+    var el = drag.el;
+    el.style.display = 'none'; 
+    var dropTarget = document.elementFromPoint(e.clientX, e.clientY);
+    el.style.display = ''; 
+    
+    if (dropTarget && dropTarget.classList.contains('part')) {
+        var partId = dropTarget.id.replace('p-', '');
+        if (CAT[o.id].c === 'med') {
+            if (CAT[o.id].use) {
+                showAlert('Этот препарат (' + CAT[o.id].n + ') применяется внутрь. Нажмите «Использовать» в инвентаре.', true);
+                o.r = r0; render();
+                drag = null;
+                return;
+            }
+            applyMedicine(o, partId);
+            drag = null;
+            return;
+        } else {
+            showAlert('Этим предметом нельзя лечиться.', true);
+        }
+    }
+
+    var w=where(e.clientX,e.clientY);
+    drag=null; msg('');
+    if(!moved||!w){o.r=o.r;render();return;}
+    if(w.g.indexOf('eq_')===0){toSlot(o,w.g,r0);return;}
+    var c=cellAt(w,e.clientX,e.clientY), tgt=null;
+    S.inv[w.g].forEach(function(p){ if(p===o)return; var d=dim(p);
+      if(c.x>=p.x&&c.x<p.x+d.w&&c.y>=p.y&&c.y<p.y+d.h)tgt=p;});
+    if(tgt){ interact(o,tgt,w.g); return; }
+    var x=Math.round((e.clientX-e.target.getBoundingClientRect().left+0)/C);
+    var rr=e.target.getBoundingClientRect(), d0=dim(o);
+    var nx=Math.round((rr.left-w.r.left-2)/C), ny=Math.round((rr.top-w.r.top-2)/C);
+    if(fits(w.g,o,nx,ny)){drop(o);o.x=nx;o.y=ny;S.inv[w.g].push(o);}
+    else {o.r=r0;msg('Не помещается.');}
+    commit();
+  }
+
+  function interact(a,b,g){
+    if ((a.id === 'battery' && b.id === 'flashlight') || (b.id === 'battery' && a.id === 'flashlight')) {
+      var flash = a.id === 'flashlight' ? a : b;
+      var bat = a.id === 'battery' ? a : b;
+      if ((flash.ch || 0) >= CAT.flashlight.maxCharge) { msg('Фонарик уже полностью заряжен.'); render(); return; }
+      flash.ch = CAT.flashlight.maxCharge;
+      dec(bat);
+      msg('Фонарик заряжен.');
+      commit(); return;
+    }
+
+    if ((a.id === 'filter' && b.id === 'gasmask') || (b.id === 'filter' && a.id === 'gasmask')) {
+      var mask = a.id === 'gasmask' ? a : b;
+      var filt = a.id === 'filter' ? a : b;
+      if ((mask.ch || 0) >= CAT.gasmask.maxCharge) { msg('Фильтр в противогазе полный.'); render(); return; }
+      mask.ch = CAT.gasmask.maxCharge;
+      dec(filt);
+      msg('Установлен новый фильтр в противогаз.');
+      commit(); return;
+    }
+
+    if(a.id===b.id&&CAT[a.id].st>1&&b.n<CAT[a.id].st){
+      var m=Math.min(a.n,CAT[a.id].st-b.n); b.n+=m; a.n-=m; if(a.n<=0)drop(a); msg('Стопка объединена.'); commit(); return;
+    }
+    var rc=REC[[a.id,b.id].sort().join('+')];
+    if(rc){
+      var snap=JSON.stringify(S.inv), ga=listOf(a);
+      dec(a); dec(b);
+      var n={id:rc[0],n:rc[1],x:0,y:0,r:0};
+      if(!auto(g,n)&&!auto(ga,n)&&!auto('pack',n)&&!auto('belt',n)){S.inv=JSON.parse(snap);msg('Нет места для результата.');}
+      else {sel={o:n};msg('Создано: '+CAT[rc[0]].n+(rc[1]>1?' ×'+rc[1]:''));}
+      commit(); return;
+    }
+    msg('Эти предметы нельзя объединить.'); render();
+  }
+  
+  document.addEventListener('keydown',function(e){
+    if((e.key==='r'||e.key==='R'||e.key==='к'||e.key==='К')&&drag){drag.o.r=drag.o.r?0:1;var d=dim(drag.o);
+      drag.el.style.width=d.w*C+'px';drag.el.style.height=d.h*C+'px';}
+  });
+
+  function showInfo(){
+    var el=document.getElementById('info');
+    if(!sel||!listOf(sel.o)){
+      el.textContent='Выберите предмет. Тяните между сетками. R при переносе поворачивает. Для лечения выделите часть манекена и нажмите «Использовать» на лекарстве.';
+      return;
+    }
+    var o=sel.o,c=CAT[o.id];
+    
+    var ammotxt = (c.maxMag && o.m !== undefined) ? ' [Патроны: '+o.m+'/'+c.maxMag+']' : '';
+    var lighttxt = (c.isLight) ? ' [Заряд: '+(o.ch||0).toFixed(1)+'/'+c.maxCharge+'ч] ' + (o.on?'(ВКЛ)':'(ВЫКЛ)') : '';
+    var masktxt = (c.isFilterable) ? ' [Фильтр: '+(o.ch||0).toFixed(1)+'/'+c.maxCharge+'ч] ' + (o.on?'(АКТИВЕН)':'(ЗАКРЫТ)') : '';
+    
+    el.innerHTML='<b>'+iname(o)+(c.st>1?' ×'+o.n:'')+ammotxt+lighttxt+masktxt+'</b><br>'+c.d+'<br>';
+    function btn(t,f,dis){var b=document.createElement('button');b.className='t';b.textContent=t;b.disabled=!!dis;b.onclick=f;el.appendChild(b);}
+    
+    btn('Повернуть',function(){
+      var g=listOf(o);
+      if(g.indexOf('eq_')===0){msg('Надетый предмет не поворачивается.');return;}
+      o.r=o.r?0:1;
+      if(!fits(g,o,o.x,o.y)){var old=o; drop(o); if(!auto(g,o)){o.r=o.r?0:1;S.inv[g].push(o);msg('Нет места для поворота.');}}
+      commit();});
+      
+    if (c.isLight || c.isFilterable) {
+        btn(o.on ? 'Выключить' : 'Включить', function() {
+            if (o.broken) { showAlert('Фонарик сломан: включить его нельзя.', true); } else if (!o.on && (o.ch || 0) <= 0) {
+                showAlert('Ресурс исчерпан! Нужна замена (батарейка или фильтр).', true);
+            } else {
+                o.on = !o.on;
+                commit();
+            }
+        });
+    }
+
+    if(c.use || c.c === 'med'){
+      btn('Использовать',function(){
+        if (c.use) {
+          if (typeof c.use === 'function') {
+            if(c.use(o)===false)return;
+          } else if (typeof c.use === 'object') {
+            for(var k in c.use) setV(k,clamp(getV(k)+c.use[k]));
+            showAlert('Использовано: ' + c.n, false);
+          }
+          dec(o); commit();
+        } else if (c.c === 'med') {
+          if (!curPart) {
+            showAlert('Сначала выделите часть тела (нажмите на неё), затем используйте медикамент.', true);
+            return;
+          }
+          applyMedicine(o, curPart);
+        }
+      });
+    }
+
+    var from=listOf(o), worn=from.indexOf('eq_')===0;
+    btn(worn?'Снять':'Надеть',function(){
+      if(worn){
+        drop(o);
+        if(!auto('pack',o)&&!auto('belt',o)){S.inv[from].push(o);msg('Некуда убрать предмет.');}
+      } else {
+        var sk=null;
+        SL.forEach(function(s){if(!sk&&fits('eq_'+s[0],o,0,0))sk=s[0];});
+        if(!sk){msg('Нет свободного подходящего слота.');return;}
+        drop(o);o.x=0;o.y=0;o.r=0;S.inv['eq_'+sk].push(o);
+      }
+      commit();});
+    var sp=traderOn()?sellPrice(o.id):0;
+    if(sp>0){
+      btn('Продать за '+sp+' ₮',function(){sellItem(o,1);});
+      if(o.n>1)btn('Продать все ('+(sp*o.n)+' ₮)',function(){sellItem(o,o.n);});
+    }
+    btn('Выбросить',function(){drop(o);toGround(o);sel=null;commit();},c.c==='key');
+  }
+
+  // --- ЛОГИКА КАТЕГОРИЙ И ДОБАВЛЕНИЯ ПРЕДМЕТОВ ---
+  var catSelect = document.getElementById('add-cat');
+  var itemSelect = document.getElementById('add-item');
+  var atSelect = document.getElementById('add-to');
+
+  function updateItemDropdown() {
+    var selectedCat = catSelect.value;
+    itemSelect.innerHTML = '';
+    Object.keys(CAT).forEach(function(k) {
+      if (CAT[k].c === selectedCat || (selectedCat === 'weapon' && CAT[k].c === 'ammo')) {
+        itemSelect.add(new Option(CAT[k].n + ' (' + CAT[k].w + '×' + CAT[k].h + ')', k));
+      }
+    });
+  }
+
+  catSelect.addEventListener('change', updateItemDropdown);
+  updateItemDropdown();
+
+  ['pack','belt'].forEach(function(g){atSelect.add(new Option(G[g].t,g));});
+
+  document.getElementById('add-btn').onclick=function(){
+    var id=itemSelect.value, g=atSelect.value, c=CAT[id];
+    if(!c) return;
+    var ex=S.inv[g].filter(function(p){return p.id===id&&c.st>1&&p.n<c.st;})[0];
+    if(ex){ex.n++;sel={o:ex};msg('Добавлено в стопку.');commit();return;}
+    var o={id:id,n:1,x:0,y:0,r:0};
+    if(c.maxMag) o.m = 0; 
+    if(c.isLight || c.isFilterable) { o.ch = c.maxCharge; o.on = false; } 
+    if(auto(g,o)){sel={o:o};msg('Добавлено: '+c.n);}else msg('В «'+G[g].t+'» нет места.');
+    commit();
+  };
+  
+  function paintArmor() {
+    var totalArmor = 0;
+    var totalRadProt = 0;
+    var armorSlots = ['eq_head', 'eq_face', 'eq_armor'];
+    
+    armorSlots.forEach(function(s) {
+      if (S.inv[s] && S.inv[s].length > 0) {
+        var item = S.inv[s][0];
+        var id = item.id;
+        if (CAT[id] && CAT[id].arm) totalArmor += CAT[id].arm;
+        if (CAT[id] && CAT[id].radProt) {
+          if (id === 'gasmask') {
+            if (item.on && (item.ch || 0) > 0) totalRadProt += CAT[id].radProt;
+          } else {
+            totalRadProt += CAT[id].radProt;
+          }
+        }
+      }
+    });
+
+    var elArmor = document.getElementById('armor-val');
+    if(elArmor) elArmor.textContent = 'БРОНЯ: ' + totalArmor;
+
+    var elRad = document.getElementById('radprot-val');
+    if(elRad) elRad.textContent = 'ЗАЩИТА: ' + totalRadProt;
+  }
+
+  function getRadProtection() {
+    var total = 0;
+    ['eq_head', 'eq_face', 'eq_armor'].forEach(function(s) {
+      if (S.inv[s] && S.inv[s].length > 0) {
+        var item = S.inv[s][0];
+        if (CAT[item.id] && CAT[item.id].radProt) {
+          if (item.id === 'gasmask') {
+            if (item.on && (item.ch || 0) > 0) total += CAT[item.id].radProt;
+          } else {
+            total += CAT[item.id].radProt;
+          }
+        }
+      }
+    });
+    return total;
+  }
+
+  // ===== БРОСОК d100 =====
+  var lastHit={}, d100Hist=[];
+  function d100(){return 1+Math.floor(Math.random()*100);}
+  function rollAttack(o,c,sl,verb){
+    var need=hitChance(o,c,sl).pct, r=d100(), crit=r<=5?1:r>=96?-1:0;
+    var res={id:o.id,r:r,need:need,hit:r<=need,crit:crit,verb:verb,aim:curPart?PN[curPart]:''};
+    if(crit<0&&c.maxMag){o.broken=true;res.jam=true;}
+    lastHit[sl]=res; return res;
+  }
+  function rollText(rs,c){
+    var out=rs.crit>0?'КРИТИЧЕСКОЕ ПОПАДАНИЕ':rs.hit?'ПОПАДАНИЕ':rs.crit<0?'КРИТИЧЕСКИЙ ПРОМАХ':'ПРОМАХ';
+    return rs.verb+' («'+c.n+'»'+(rs.aim?', цель: '+rs.aim:'')+'): выпало '+rs.r+', нужно не больше '+rs.need+'. '+out+'!'+(rs.jam?' ОСЕЧКА: оружие заклинило.':'');
+  }
+  function resultBox(o,sl){
+    var lr=lastHit[sl]; if(!lr||lr.id!==o.id)return null;
+    var col=lr.crit>0?'#f2d03a':lr.hit?'#3bff6a':'#ff6a5a';
+    var out=lr.crit>0?'КРИТИЧЕСКОЕ ПОПАДАНИЕ':lr.hit?'ПОПАДАНИЕ':lr.crit<0?'КРИТИЧЕСКИЙ ПРОМАХ':'ПРОМАХ';
+    var box=document.createElement('div'); box.style.cssText='margin:0 0 6px;padding:6px;border:1px solid '+col+';background:#14100c;';
+    var top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:baseline;font-size:.75rem;';
+    var a=document.createElement('span'); a.textContent=lr.verb+': бросок d100';
+    var n=document.createElement('b'); n.style.cssText='font-size:1.4rem;color:'+col; n.textContent=lr.r;
+    top.appendChild(a); top.appendChild(n); box.appendChild(top);
+    var bar=document.createElement('div'); bar.style.cssText='position:relative;height:10px;margin:4px 0;background:linear-gradient(90deg,#2a6a35 '+lr.need+'%,#6a2a24 '+lr.need+'%);';
+    var mk2=document.createElement('div'); mk2.style.cssText='position:absolute;top:-3px;width:3px;height:16px;background:#fff;left:calc('+lr.r+'% - 1px);';
+    bar.appendChild(mk2); box.appendChild(bar);
+    var t=document.createElement('div'); t.style.cssText='display:flex;justify-content:space-between;font-size:.72rem;';
+    var l=document.createElement('span'); l.textContent='нужно не больше '+lr.need;
+    var rr=document.createElement('b'); rr.style.color=col; rr.textContent=out;
+    t.appendChild(l); t.appendChild(rr); box.appendChild(t); return box;
+  }
+  document.getElementById('cover-on').addEventListener('change',function(){S.cover=this.checked;save();paintCombat();});
+  document.getElementById('d100-btn').onclick=function(){
+    var r=d100(), col=r<=5?'#f2d03a':r>=96?'#ff6a5a':'#e8d9b5';
+    var e=document.getElementById('d100-res'); e.textContent=r; e.style.color=col;
+    var lb=document.getElementById('d100-lbl'); lb.textContent=r<=5?'критический успех':r>=96?'критический провал':''; lb.style.color=col;
+    d100Hist.unshift(r); if(window.__obrShare)window.__obrShare('бросок d100: '+r); d100Hist=d100Hist.slice(0,6);
+    document.getElementById('d100-hist').textContent=d100Hist.length>1?'раньше: '+d100Hist.slice(1).join(', '):'';
+  };
+
+  // ===== СКОРОСТЬ ПЕРЕДВИЖЕНИЯ В БОЮ =====
+  function armorValue(){
+    var t=0; ['eq_head','eq_face','eq_armor'].forEach(function(g){
+      var it=S.inv[g]&&S.inv[g][0]; if(it&&CAT[it.id]&&CAT[it.id].arm)t+=CAT[it.id].arm;
+    }); return t;
+  }
+  // 10 м за ход без брони, каждое очко брони отнимает 1 м, но не меньше 2 м
+  function moveSpeed(){return Math.max(2,10-armorValue()+tn('spd')-3*lostN(['lleg','rleg'])-prosthN(['lleg','rleg']));}
+  function paintSpeed(){
+    var el=document.getElementById('move-speed'); if(!el)return;
+    var v=moveSpeed(), a=armorValue(), col=v>=8?'#3bff6a':v>=5?'#f2d03a':'#ff6a5a';
+    el.innerHTML='';
+    var top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;font-size:.75rem;letter-spacing:.06em;';
+    var l=document.createElement('span'); l.textContent='СКОРОСТЬ ПЕРЕДВИЖЕНИЯ В БОЮ';
+    var b=document.createElement('b'); b.style.color=col; b.textContent=v+' м за ход';
+    top.appendChild(l); top.appendChild(b); el.appendChild(top);
+    var bar=document.createElement('div'); bar.style.cssText='height:8px;background:#2b211a;margin:4px 0;';
+    var f=document.createElement('div'); f.style.cssText='height:100%;width:'+Math.min(100,v*10)+'%;background:'+col+';'; bar.appendChild(f); el.appendChild(bar);
+    var n=document.createElement('div'); n.style.cssText='font-size:.68rem;opacity:.85;';
+    n.textContent='Броня '+a+': чем она выше, тем медленнее. Действует только на перемещение в бою.'; el.appendChild(n);
+  }
+
+  // ===== ЦЕЛЬ: ЧАСТЬ ТЕЛА =====
+  var AIM={head:-20,torso:10,larm:-10,rarm:-10,lleg:-8,rleg:-8};
+  function aimMod(){return curPart&&AIM[curPart]!==undefined?AIM[curPart]:0;}
+  function paintAim(){
+    var el=document.getElementById('aim-info'); if(!el)return; el.innerHTML='';
+    var am=aimMod(), col=am>0?'#3bff6a':am<0?'#ff9a8a':'#e8d9b5';
+    var b=document.createElement('b'); b.style.color=col;
+    b.textContent=curPart?('ЦЕЛЬ: '+PN[curPart]+' ('+(am>0?'проще, +':'сложнее, ')+am+'%)'):'ЦЕЛЬ: не выбрана';
+    el.appendChild(b);
+    var n=document.createElement('div'); n.style.cssText='font-size:.68rem;opacity:.85;margin-top:2px;';
+    n.textContent=curPart?'Часть тела выбрана на фигуре тела. Она же выбирается для лечения своих ран. В ближнем бою поправка на четверть меньше.':'Выберите часть тела на фигуре, чтобы целиться в неё: торс проще, голова и конечности сложнее.';
+    el.appendChild(n);
+  }
+
+  // ===== ШАНС ПОПАДАНИЯ =====
+  function flashOn(){
+    return Object.keys(S.inv).some(function(g){return g!=='box'&&S.inv[g].some(function(x){return CAT[x.id].isLight&&x.on&&x.ch>0;});});
+  }
+  function hitChance(o,c,sl){
+    var ranged=!!c.maxMag, mods=[], base=50;
+    if(ranged){ base={pistol:65,shotgun:70}[o.id]; if(base===undefined)base=60; }
+    var cl=S.clock!==undefined?S.clock:480, hr=Math.floor((cl%1440)/60);
+    var night=hr>=22||hr<6, eve=hr>=18&&hr<22, dark=night?(ranged?25:15):eve?(ranged?10:5):0;
+    dark=Math.round(dark*trm('dark'));
+    if(dark){
+      mods.push([(night?'Ночь':'Вечер')+': плохая видимость',-dark]);
+      var rest=dark;
+      if(flashOn()){var g=Math.min(rest,ranged?15:10); mods.push(['Фонарик включён',g]); rest-=g;}
+      if(S.fireNear&&rest>0)mods.push(['Свет костра',Math.min(8,rest)]);
+    }
+    if(S.cover)mods.push(['Противник за укрытием',ranged?-20:-10]);
+    var am=aimMod(); if(am)mods.push(['Цель: '+PN[curPart],ranged?am:Math.round(am*0.75)]);
+    if(numS('halluc')>0)mods.push(['Галлюцинации',-15]);
+    if(numS('blind')>0)mods.push(['Ослепление',-30]);
+    if(numS('deaf')>0)mods.push(['Оглушение',-10]);
+    var thit=tn(ranged?'hitR':'hitM'); if(thit)mods.push(['Черты персонажа',thit]);
+    if(!ranged){ var es=Math.max(0,(S.st_str||0)-penalties().str+bonuses().str); if(es)mods.push(['Сила ('+es+')',3*es]); }
+    var arms=sl==='Обе руки'?['larm','rarm']:sl==='Левая рука'?['larm']:['rarm'];
+    if(arms.some(function(a){return S.lost&&S.lost[a];}))mods.push(['Рука потеряна',-60]);
+    var ll=lostN(['lleg','rleg']); if(ll)mods.push(['Нет опоры (нога потеряна)',-10*ll]);
+    if(prosthN(arms))mods.push(['Протез руки',-5]);
+    arms.forEach(function(id){
+      var pen=0; wList(id).forEach(function(w){pen+=8*(w.s||1);});
+      if(pen)mods.push([PN[id]+': раны',-pen]);
+    });
+    var hp=0; wList('head').forEach(function(w){hp+=w.t==='ache'?5:w.t==='ears'?8:6*(w.s||1);});
+    if(hp)mods.push(['Голова: боль и раны',-hp]);
+    var pl=numS('pulse')||70;
+    if(pl>=120)mods.push(['Сильная дрожь (пульс '+Math.round(pl)+')',-15]);
+    else if(pl>=100)mods.push(['Дрожь в руках (пульс '+Math.round(pl)+')',-8]);
+    var P=penalties(), wk=(ranged?P.str:0)+P.sur;
+    if(wk)mods.push(['Слабость и усталость',-2*wk]);
+    var pct=base; mods.forEach(function(m){pct+=m[1];});
+    return {base:base,mods:mods,pct:Math.max(5,Math.min(95,pct)),empty:ranged&&!(o.m>0),ranged:ranged};
+  }
+  function hitBox(o,c,sl){
+    var h=hitChance(o,c,sl), col=h.pct>=60?'#3bff6a':h.pct>=35?'#f2d03a':'#ff6a5a';
+    var box=document.createElement('div'); box.style.cssText='margin:4px 0 6px;padding:6px;border:1px solid #4a3a2c;background:#14100c;';
+    var top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;font-size:.75rem;letter-spacing:.06em;';
+    var l=document.createElement('span'); l.textContent='ШАНС ПОПАДАНИЯ';
+    var v=document.createElement('b'); v.style.color=col; v.textContent=h.empty?'нет патронов ('+h.pct+'%)':h.pct+'%';
+    top.appendChild(l); top.appendChild(v); box.appendChild(top);
+    var bar=document.createElement('div'); bar.style.cssText='height:8px;background:#2b211a;margin:4px 0;';
+    var fill=document.createElement('div'); fill.style.cssText='height:100%;width:'+h.pct+'%;background:'+col+';'+(h.empty?'opacity:.35;':'');
+    bar.appendChild(fill); box.appendChild(bar);
+    var t=document.createElement('div'); t.style.cssText='font-size:.68rem;line-height:1.5;opacity:.9;';
+    t.appendChild(document.createTextNode('Основа ('+(h.ranged?'дальний бой':'ближний бой')+'): '+h.base+'%'));
+    h.mods.forEach(function(m){
+      var d=document.createElement('div'); d.style.color=m[1]>0?'#3bff6a':'#ff9a8a';
+      d.textContent=m[0]+': '+(m[1]>0?'+':'−')+Math.abs(m[1]); t.appendChild(d);
+    });
+    box.appendChild(t); return box;
+  }
+
+  function paintCombat() {
+    var cp = document.getElementById('combat-panel');
+    cp.innerHTML = '';
+    var cv=document.getElementById('cover-on'); if(cv)cv.checked=!!S.cover;
+    paintSpeed(); paintAim();
+    var weapons = [];
+    
+    if (S.inv['eq_hand1'] && S.inv['eq_hand1'].length > 0 && CAT[S.inv['eq_hand1'][0].id].c === 'weapon') {
+      var w1 = S.inv['eq_hand1'][0];
+      weapons.push({o: w1, sl: CAT[w1.id].twohanded ? 'Обе руки' : 'Левая рука'});
+    }
+    if (S.inv['eq_hand2'] && S.inv['eq_hand2'].length > 0 && CAT[S.inv['eq_hand2'][0].id].c === 'weapon') {
+      var w2 = S.inv['eq_hand2'][0];
+      weapons.push({o: w2, sl: CAT[w2.id].twohanded ? 'Обе руки' : 'Правая рука'});
+    }
+
+    if (weapons.length === 0) {
+      cp.innerHTML = '<div style="font-size:0.75rem; opacity:0.6; text-align:center; padding:10px;">В руки не взято оружие.</div>';
+      return;
+    }
+
+    weapons.forEach(function(wp) {
+      var o = wp.o, c = CAT[o.id];
+      if (o.m === undefined && c.maxMag) o.m = 0; 
+
+      var wDiv = document.createElement('div');
+      wDiv.style.cssText = 'background:#1b140f; padding:8px; border:1px solid #4a3a2c; font-size:0.8rem;';
+      
+      var head = document.createElement('div');
+      head.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:6px;';
+      head.innerHTML = '<b>' + c.n + '</b><span style="color:#a8774a">' + wp.sl + '</span>';
+      wDiv.appendChild(head);
+      wDiv.appendChild(hitBox(o,c,wp.sl));
+      var rbx=resultBox(o,wp.sl); if(rbx)wDiv.appendChild(rbx);
+
+      var btns = document.createElement('div');
+      btns.style.cssText = 'display:flex; gap:6px; margin-top:8px;';
+      
+      var btnS = document.createElement('button');
+      btnS.className = 't'; 
+      btnS.style.flex = '1'; 
+      btnS.style.background = '#8c2020'; 
+      
+      if (c.maxMag) {
+        var bar = document.createElement('div');
+        bar.style.letterSpacing = '1px';
+        bar.style.fontSize = '0.9rem';
+        var blocks = '';
+        for(var i=0; i<c.maxMag; i++) blocks += i < o.m ? '■' : '□';
+        bar.innerHTML = '<span style="color:#f2d03a">' + blocks + '</span> ' + o.m + '/' + c.maxMag;
+        wDiv.appendChild(bar);
+
+        btnS.textContent = 'ВЫСТРЕЛ';
+        btnS.onclick = function() {
+          if (o.m > 0) { 
+            if(o.broken){showAlert('Оружие заклинило: нужен ремонт (Ремкомплект).',true);return;} o.m--; var rs=rollAttack(o,c,wp.sl,'Выстрел'); var s0=sel, gotCase=placeBought('casing','pack',false); sel=s0; if(!gotCase)toGround({id:'casing',n:1}); save(); render(); (window.__obrShare&&window.__obrShare(rollText(rs,c))),showAlert(rollText(rs,c)+(gotCase?' Гильза подобрана.':' Гильза упала на землю.'),!rs.hit); 
+          } else { 
+            showAlert('Щёлк! Нет патронов в ' + c.n, true); 
+          }
+        };
+
+        var btnR = document.createElement('button');
+        btnR.className = 't'; 
+        btnR.style.flex = '1'; 
+        btnR.textContent = 'ПЕРЕЗАРЯДИТЬ';
+        btnR.onclick = function() {
+          var needed = c.maxMag - o.m;
+          if (needed <= 0) { showAlert('Магазин уже полон.', true); return; }
+          var loaded = 0;
+          
+          ['pack', 'belt', 'eq_pocket1', 'eq_pocket2'].forEach(function(g) {
+            if (!S.inv[g]) return;
+            for (var i = S.inv[g].length - 1; i >= 0; i--) {
+              var ammo = S.inv[g][i];
+              if (ammo.id === c.ammoType && loaded < needed) {
+                var take = Math.min(needed - loaded, ammo.n);
+                ammo.n -= take;
+                loaded += take;
+                if (ammo.n <= 0) S.inv[g].splice(i, 1);
+              }
+            }
+          });
+
+          if (loaded > 0) {
+            o.m += loaded;
+            save(); render(); showAlert('Заряжено патронов: ' + loaded, false);
+          } else {
+            showAlert('Нет подходящих патронов (' + CAT[c.ammoType].n + ') в инвентаре!', true);
+          }
+        };
+        btns.appendChild(btnS); 
+        btns.appendChild(btnR);
+      } 
+      else {
+        btnS.textContent = 'УДАР';
+        btnS.onclick = function() { var rs=rollAttack(o,c,wp.sl,'Удар'); render(); (window.__obrShare&&window.__obrShare(rollText(rs,c))),showAlert(rollText(rs,c),!rs.hit); };
+        btns.appendChild(btnS);
+      }
+
+      wDiv.appendChild(btns);
+      cp.appendChild(wDiv);
+    });
+  }
+
+  function packFill(){
+    var used=0; S.inv.pack.forEach(function(o){var d=dim(o);used+=d.w*d.h;});
+    return Math.min(1,used/(G.pack.w*gh('pack')));
+  }
+  function loadMult(){return 1+packFill()*rate('r_load',50)/100+weakness();}
+  // ===== ЭФФЕКТЫ РАДИАЦИИ И ИНФЕКЦИИ =====
+  var IW={cut:1.2,gun:2,burn:2};
+  var peBusy=false;
+  function stn(k){return {str:'Сила',con:'Телосложение',int:'Интеллект',sur:'Выживание'}[k];}
+  function numS(k){var v=parseFloat(S[k]);return isNaN(v)?0:v;}
+  function tierOf(v){return v>=75?3:v>=50?2:v>=25?1:0;}
+  function radTier(){return tierOf(numS('rad'));}
+  function infTier(){return tierOf(numS('infection'));}
+  // все активные эффекты и их штрафы к характеристикам (p)
+  function activeEffects(){
+    var L=[], r=radTier(), i=infTier();
+    var RT=[null,
+      {n:'тошнота',c:'bad',t:'Тошнота: голод и жажда расходуются быстрее.',p:{con:1}},
+      {n:'лучевая болезнь',c:'bad',t:'Лучевая болезнь: сон восстанавливает не всю бодрость.',p:{con:2,str:1}},
+      {n:'тяжёлое облучение',c:'crit',t:'Тяжёлое облучение: сильная слабость, инфекция растёт быстрее.',p:{con:3,str:2}}];
+    var IT=[null,
+      {n:'озноб',c:'bad',t:'Озноб: бодрость тратится быстрее.',p:{sur:1}},
+      {n:'лихорадка',c:'bad',t:'Лихорадка: сильнее жажда, сон слабее, лёгкие раны могут ухудшиться.',p:{sur:2,str:1}},
+      {n:'бред',c:'crit',t:'Бред: раскалывается голова, сильная слабость, раны гноятся быстрее.',p:{sur:2,str:2}}];
+    if(RT[r])L.push(RT[r]);
+    if(IT[i])L.push(IT[i]);
+    // голод, жажда, бодрость: ступени при значении ниже 50 / 25 / 10
+    var LT=function(v){return v<10?3:v<25?2:v<50?1:0;};
+    var HG=[null,
+      {n:'голод',c:'bad',t:'Голод: сосёт под ложечкой, сил меньше.',p:{str:1}},
+      {n:'истощение',c:'bad',t:'Истощение: силы на исходе, организм слабеет.',p:{str:2,con:1}},
+      {n:'тяжёлое голодание',c:'crit',t:'Тяжёлое голодание: организм работает на пределе.',p:{str:3,con:2}}];
+    var TH=[null,
+      {n:'жажда',c:'bad',t:'Жажда: пересохло во рту, трудно думать.',p:{int:1}},
+      {n:'обезвоживание',c:'bad',t:'Обезвоживание: кружится голова, мысли путаются.',p:{int:2,con:1}},
+      {n:'сильное обезвоживание',c:'crit',t:'Сильное обезвоживание: организм на грани.',p:{int:3,con:2,sur:1}}];
+    var EN=[null,
+      {n:'усталость',c:'bad',t:'Усталость: клонит в сон.',p:{sur:1}},
+      {n:'измождение',c:'bad',t:'Измождение: внимание рассеивается.',p:{sur:2,int:1}},
+      {n:'полное измождение',c:'crit',t:'Полное измождение: ноги не держат.',p:{sur:3,int:2,str:1}}];
+    var hg=HG[LT(getV('hunger'))], th=TH[LT(getV('thirst'))], en=EN[LT(getV('energy'))];
+    if(hg)L.push(hg);
+    if(th)L.push(th);
+    if(en)L.push(en);
+    trList().forEach(function(t){
+      if(!t[4].st)return; var pp={}, any=false;
+      for(var k in t[4].st)if(t[4].st[k]<0){pp[k]=-t[4].st[k];any=true;}
+      if(any)L.push({n:t[1],c:'bad',t:'Черта «'+t[1]+'»: '+t[3],p:pp});
+    });
+    ['larm','rarm'].forEach(function(id){if(S.lost&&S.lost[id])L.push({n:'потеря руки',c:'crit',t:'Потеряна конечность: '+PN[id]+'.',p:{str:1}});});
+    ['lleg','rleg'].forEach(function(id){if(S.lost&&S.lost[id])L.push({n:'потеря ноги',c:'crit',t:'Потеряна конечность: '+PN[id]+'.',p:{sur:1}});});
+    var hz=numS('halluc'); if(hz>0)L.push({n:'галлюцинации',c:'bad',t:'Галлюцинации: мерещится то, чего нет, ещё около '+Math.ceil(hz)+' ч.',p:{int:2}});
+    var dfv=numS('deaf'); if(dfv>0)L.push({n:'оглушение',c:'bad',t:'Оглушение: звон в ушах, ещё около '+Math.ceil(dfv)+' ч.',p:{int:1,sur:1}});
+    var bld=numS('blind'); if(bld>0)L.push({n:'ослепление',c:'bad',t:'Ослепление: перед глазами пятна, ещё около '+Math.ceil(bld)+' ч.',p:{sur:1}});
+    var cd=numS('cold');
+    if(cd>0)L.push({n:'простуда',c:'bad',t:'Простуда: насморк, слабость, ещё около '+Math.ceil(cd)+' ч.',p:{sur:1,con:1}});
+    var hl=wList('head');
+    if(hl.some(function(w){return w.t==='ears';}))L.push({n:'кровь из ушей',c:'crit',t:'Кровь из ушей: трудно сосредоточиться.',p:{int:2}});
+    if(hl.some(function(w){return w.t==='ache';}))L.push({n:'головная боль',c:'bad',t:'Головная боль: мысли путаются.',p:{int:1}});
+    return L;
+  }
+  function penaltyWhy(k){
+    var parts=[];
+    activeEffects().forEach(function(e){ if(e.p[k])parts.push(e.n+' −'+e.p[k]); });
+    return parts.join(', ');
+  }
+  // суммарные штрафы (не больше самой характеристики)
+  function penalties(){
+    var raw={str:0,con:0,int:0,sur:0};
+    activeEffects().forEach(function(e){for(var k in e.p)raw[k]+=e.p[k];});
+    for(var k in raw)raw[k]=Math.min(raw[k],S['st_'+k]||0);
+    return raw;
+  }
+  // Сила: ноша тяжелее, Выживание: быстрее расход
+  // временные бонусы (сытная горячая еда)
+  function bonuses(){return {str:(numS('fed')>0?1:0)+tst('str',1),con:tst('con',1),int:tst('int',1),sur:tst('sur',1)};}
+  function weakness(){var P=penalties(),B=bonuses();return 0.1*(P.str-B.str)+0.05*P.sur;}
+  function applyInfWounds(){
+    var hl=wList('head'), has=hl.some(function(w){return w.inf;}), want=infTier()>=3;
+    if(want&&!has){hl.push({t:'ache',s:1,inf:1});save();paintBody();}
+    else if(!want&&has){S.wounds.head=hl.filter(function(w){return !w.inf;});save();paintBody();checkHead();}
+  }
+  function paintEffects(){
+    if(peBusy)return; peBusy=true;
+    try{
+      applyInfWounds();
+      var el=document.getElementById('effects'); if(!el)return;
+      el.innerHTML='';
+      var L=activeEffects();
+      L.forEach(function(e){
+        var pt=Object.keys(e.p).map(function(k){return stn(k)+' −'+e.p[k];}).join(', ');
+        el.appendChild(mk('div',e.c,e.t+' ['+pt+']'));
+      });
+      var ab=numS('abx');
+      if(ab>0)el.appendChild(mk('div','ok','Антибиотики действуют: ещё '+ab.toFixed(1)+' ч.'));
+      var fed=numS('fed');
+      if(fed>0)el.appendChild(mk('div','ok','Сытная горячая еда: Сила +1, ещё '+Math.ceil(fed)+' ч.'));
+      var ar=artRad(); if(ar)el.appendChild(mk('div',ar>0?'bad':'ok','Артефакты в инвентаре: радиация '+(ar>0?'+':'−')+Math.abs(ar).toFixed(1)+' мЗв/ч.'));
+      if(!L.length&&ab<=0&&fed<=0&&!ar)el.appendChild(mk('div','ok','Эффектов нет: штрафов к характеристикам нет.'));
+      if(window.__statPaint)window.__statPaint();
+      if(window.__inv)paintLoad();
+      if(window.__shop)window.__shop();
+      if(window.__camp)window.__camp();
+      if(window.__roomPres)window.__roomPres();
+      if(window.__tokenSync)window.__tokenSync();
+      if(window.__inv)paintCombat();
+      paintLost();
+    }finally{peBusy=false;}
+  }
+
+  function paintLoad(){
+    var el=document.getElementById('load'); if(!el)return;
+    el.textContent='Загрузка рюкзака: '+Math.round(packFill()*100)+'%. Расход голода, жажды и бодрости ×'+loadMult().toFixed(2)+'.';
+  }
+  function clamp(v, max){return Math.max(0,Math.min(max||100,Math.round(v*10)/10));}
+  function getV(k){return S[k]!==undefined?+S[k]:((k==='rad'||k==='infection')?0:100);}
+  function rate(k,d){var v=parseFloat(S[k]);return isNaN(v)?d:v;}
+  function setV(k,v){
+    S[k]=v; save();
+    document.querySelectorAll('[data-k="'+k+'"]').forEach(function(o){
+      o.value=v; var r=o.closest('.vrow'); if(r)r.classList.toggle('low',v<25 && k!=='rad' && k!=='infection');
+      if(k==='rad' && r) r.classList.toggle('rad-danger', v > 50);
+      if(k==='infection' && r) r.classList.toggle('rad-danger', v > 50);
+    });
+    if(k==='pulse')checkHead();
+    if(k==='rad'||k==='infection'||k==='hunger'||k==='thirst'||k==='energy'){paintEffects();if(window.__inv)window.__inv();}
+  }
+  function paintClock(){
+    var c=S.clock!==undefined?S.clock:480, m=c%1440;
+    document.getElementById('clock').textContent='День '+(Math.floor(c/1440)+1)+', '+
+      String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+    // время суток: утро 6–11, день 12–17, вечер 18–21, ночь 22–5
+    var hr=Math.floor(m/60);
+    var ph=hr>=6&&hr<12?['УТРО','#e8b04a','#2a2410']:hr>=12&&hr<18?['ДЕНЬ','#f2d03a','#2e2a0c']:hr>=18&&hr<22?['ВЕЧЕР','#e0784a','#2a1810']:['НОЧЬ','#7aa2e0','#0c1424'];
+    var pe=document.getElementById('clock-phase'); if(pe){pe.textContent=ph[0];pe.style.color=ph[1];}
+    var we=document.getElementById('clock-weather');
+    if(we){
+      var wd0=weatherFor(Math.floor(c/1440)+1), rx=rainAt(c), isRainDay=['дождь','ливень','гроза'].indexOf(wd0.n)>-1;
+      var WC={'ясно':'#f2d03a','облачно':'#b8b8b8','дождь':'#7aa2e0','ливень':'#5f8fd8','туман':'#a8b4b8','гроза':'#c9a8ff','пыльная буря':'#e0904a'};
+      we.style.color=WC[wd0.n]||'#e8d9b5';
+      we.textContent=wd0.n.charAt(0).toUpperCase()+wd0.n.slice(1)+', '+wd0.temp+'°C'+(rx.rain?' · идёт дождь':rx.wet?' · хворост сырой':isRainDay?' · сейчас сухо':'');
+    }
+    var bg=document.getElementById('cf-bg'); if(bg)bg.setAttribute('fill',ph[2]);
+    var hh=document.getElementById('cf-h'), mm=document.getElementById('cf-m');
+    if(hh)hh.setAttribute('transform','rotate('+(((m/60)%12)*30)+' 22 22)');
+    if(mm)mm.setAttribute('transform','rotate('+((m%60)*6)+' 22 22)');
+    if(window.__inv)paintCombat();
+    if(window.__camp)window.__camp();
+    if(window.__quests)window.__quests();
+  }
+  
+  function advance(h,sleep,noForage){
+    var groundGone=(S.ground||[]).reduce(function(a,o){return a+(o.n||1);},0); S.ground=[];
+    if(!(h>0))return;
+    var f=sleep?0.5:1, w=[], n=Math.max(1,Math.ceil(h*12)), dt=h/n, p0=parseFloat(S.pulse);
+    if(isNaN(p0))p0=70;
+    
+    var flashlightOff = 0, maskOff = 0;
+    var allGrids = ['pack', 'belt', 'eq_head', 'eq_face', 'eq_armor', 'eq_back', 'eq_belt', 'eq_hand1', 'eq_hand2', 'eq_pocket1', 'eq_pocket2'];
+    
+    allGrids.forEach(function(g) {
+        if (!S.inv[g]) return;
+        S.inv[g].forEach(function(o) {
+            if (o.id === 'flashlight' && o.on) {
+                o.ch -= h;
+                if (o.ch <= 0) { o.ch = 0; o.on = false; flashlightOff++; }
+            }
+            if (o.id === 'gasmask' && o.on) {
+                o.ch -= h;
+                if (o.ch <= 0) { o.ch = 0; o.on = false; maskOff++; }
+            }
+        });
+    });
+    if (flashlightOff > 0) w.push('Фонарик разрядился.');
+    if (maskOff > 0) w.push('Фильтр в противогазе истощился и отключился!');
+
+    var PEN=penalties(), p=p0, lm=loadMult(), wd=woundDrain()*(1+0.1*PEN.con);
+    
+    var envRadRate = rate('r_rad_env', 2);
+    var protection = getRadProtection();
+    var netRadRate = (Math.max(0, envRadRate - protection) + artRad())*trm('rad');
+    var currentRad = getV('rad');
+    var currentInf = getV('infection');
+
+    // Проверяем наличие открытых ран для роста инфекции
+    var infRate = 0; // нарастание инфекции от ран (огнестрел и ожоги заражаются быстрее)
+    Object.keys(PN).forEach(function(id){
+      wList(id).forEach(function(wn){ if(IW[wn.t]) infRate += IW[wn.t]*(wn.s>1?1.5:1); });
+    });
+    infRate *= (1+0.1*PEN.con)*trm('inf');
+    var infStart = currentInf, abxLeft = numS('abx');
+    var shelter = shelterLevel(), sleepRate = [1.5,2,2.5][shelter];
+
+    for(var i=0;i<n;i++){
+      var rt=tierOf(currentRad), it=tierOf(currentInf);
+      var radM=[1,1.25,1.5,1.5][rt]*trm('food');
+      var hu=clamp(getV('hunger')-rate('r_hunger',4)*dt*f*lm*radM);
+      var th=clamp(getV('thirst')-rate('r_thirst',6)*dt*f*lm*radM*(it>=2?1.5:1));
+      var enPrev=getV('energy');
+      var en=clamp(enPrev+(sleep?sleepRate:-lm*(it>=1?1.25:1))*rate('r_energy',5)*dt);
+      if(sleep){ var cap=Math.min(rt>=2?70:100, it>=2?80:100); en=Math.min(en,Math.max(cap,enPrev)); }
+      currentRad = clamp(currentRad + netRadRate * dt, 100);
+      var abxOn=abxLeft>0;
+      var di=infRate*dt*(rt>=3?1.5:1)*(abxOn?0.25:1)-(abxOn?3*dt:0);
+      if(abxOn)abxLeft=Math.max(0,abxLeft-dt);
+      currentInf = clamp(currentInf + di, 100);
+
+      S.hunger=hu; S.thirst=th; S.energy=en;
+      var d=.3*maxDef(hu)+.4*maxDef(th)+.3*maxDef(en);
+      if(p>0){
+        p-=wd*dt;
+        if(d>0)p-=70/12*d*dt; else if(wd===0&&p<70)p=Math.min(70,p+5*dt);
+        p=Math.max(0,p);
+      }
+    }
+    function maxDef(v){return Math.max(0,Math.min(1,(25-v)/25));}
+
+    S.abx = abxLeft;
+    // простуда на привале
+    var t0=nowMin(), rainNow=rainOverlap(t0,t0+Math.round(h*60));
+    var fireFracAdv=(!S.fireNear||rainNow)?0:(S.fireOwn?Math.min(h,numS('fireLeft'))/h:1);
+    if(sleep && numS('cold')<=0){
+      var pc=coldChance(fireFracAdv)*(h/8);
+      if(Math.random()*100<pc){ S.cold=72; w.push('Вы простыли (шанс был '+Math.round(pc)+'%). Организм ослаблен на несколько суток.'); }
+    } else if(numS('cold')>0){
+      S.cold=Math.max(0,numS('cold')-h*(sleep&&shelter?1.5:1));
+      if(S.cold<=0)w.push('Простуда прошла.');
+    }
+    var emh=emissionHit(t0,t0+Math.round(h*60));
+    if(emh){
+      S.emDone=S.emDone||{}; S.emDone[emh.id]=1; S.fireNear=false; S.fireOwn=false; S.fireLeft=0; S.anomLeft=4;
+      if(S.sheltered){ currentRad=clamp(currentRad+4,100); w.push('ВЫБРОС: вы переждали его в укрытии (радиация +4).'); }
+      else{
+        var dose=Math.round(60*(1-Math.min(0.7,getRadProtection()*0.08)));
+        currentRad=clamp(currentRad+dose,100); p=Math.max(0,p-15); S.blind=Math.max(numS('blind'),1);
+        w.push('ВЫБРОС застал вас без укрытия: радиация +'+dose+' мЗв, пульс упал, вспышка ослепила на 1 ч.');
+      }
+    }
+    if(S.fireNear && rainNow){ S.fireNear=false; S.fireOwn=false; S.fireLeft=0; w.push('Дождь потушил костёр.'); }
+    if(S.fireNear && S.fireOwn){
+      S.fireLeft=Math.max(0,numS('fireLeft')-h);
+      if(S.fireLeft<=0){ S.fireNear=false; S.fireOwn=false; w.push('Костёр прогорел. Чтобы он не гас, подбрасывайте ветки и поленья.'); }
+      else if(S.fireLeft<=0.5) w.push('Костёр почти прогорел, нужно подбросить топлива.');
+    }
+    if(numS('fed')>0){ S.fed=Math.max(0,numS('fed')-h); if(S.fed<=0)w.push('Действие сытной еды закончилось.'); }
+    if(numS('halluc')>0){
+      var HL=['В углу зрения мелькает чья-то тень.','Деревья будто шепчут ваше имя.','Земля под ногами кажется живой.','Кто-то рядом смеётся, но вокруг никого.'];
+      w.push('Мерещится: '+HL[Math.floor(Math.random()*HL.length)]);
+      S.halluc=Math.max(0,numS('halluc')-h); if(S.halluc<=0)w.push('Галлюцинации прошли.');
+    }
+    ['deaf','blind'].forEach(function(k){
+      if(numS(k)>0){S[k]=Math.max(0,numS(k)-h); if(S[k]<=0)w.push(k==='deaf'?'Слух вернулся.':'Зрение вернулось.');}
+    });
+    if(groundGone)w.push('Вещи на земле пропали ('+groundGone+' шт.).');
+    // сбор хвороста в дороге: только вдали от торговца
+    if(!sleep && !noForage && S.forage && !S.trader){
+      var tr=Math.max(1,Math.round(h*2)), chn=forageChance(), gt=0, gl=0;
+      for(var fi=0;fi<tr;fi++){ if(Math.random()<chn){ gt+=1+Math.floor(Math.random()*2); if(Math.random()<0.1)gl++; } }
+      if(gt||gl){ var fr=putFuel(gt,gl); w.push('В дороге собрано: '+fuelText(fr)+'.'); }
+    }
+    var worse=0, itEnd=tierOf(currentInf);
+    if(itEnd>=2){
+      var pf=1-Math.exp(-(itEnd>=3?0.25:0.1)*h);
+      Object.keys(PN).forEach(function(id){
+        wList(id).forEach(function(wd2){
+          if(IW[wd2.t] && wd2.s<2 && Math.random()<pf){ wd2.s=2; worse++; p=Math.max(0,p-(WW[wd2.t]||0)); }
+        });
+      });
+      if(worse) paintBody();
+    }
+
+    setV('hunger',S.hunger); setV('thirst',S.thirst); setV('energy',S.energy); setV('rad',currentRad); setV('infection',currentInf);
+    setV('pulse',Math.round(p));
+
+    if(netRadRate > 0) {
+      w.push('Радиация: +'+(netRadRate*h).toFixed(1)+' мЗв.');
+    }
+    var dInf=currentInf-infStart;
+    if(dInf>0.05) w.push('Инфекция прогрессирует: +'+dInf.toFixed(1)+'%.');
+    else if(dInf<-0.05) w.push('Инфекция отступает: '+dInf.toFixed(1)+'%.');
+    if(worse) w.push('Раны загноились и ухудшились: '+worse+'.');
+    if(abxLeft>0) w.push('Антибиотики действуют ещё '+abxLeft.toFixed(1)+' ч.');
+    if(currentRad>=100) w.push('Смертельная доза радиации! Персонаж при смерти.');
+    if(currentInf >= 100) w.push('Сепсис! Организм поражен инфекцией, персонаж при смерти.');
+
+    S.clock=(S.clock!==undefined?S.clock:480)+Math.round(h*60); save(); paintClock();
+    document.getElementById('tmsg').textContent=(sleep?'Сон ':'Прошло ')+h+' ч. '+w.join(' ');
+  }
+
+  document.querySelectorAll('[data-adv]').forEach(function(b){b.onclick=function(){advance(parseFloat(b.dataset.adv),false);};});
+  document.querySelectorAll('[data-sleep]').forEach(function(b){b.onclick=function(){advance(parseFloat(b.dataset.sleep),true);};});
+  document.getElementById('adv-go').onclick=function(){advance(parseFloat(document.getElementById('adv-n').value),false);};
+  
+  ['hunger','thirst','energy','rad','infection'].forEach(function(k){
+    document.querySelectorAll('[data-k="'+k+'"]').forEach(function(o){
+      o.addEventListener('input',function(){setV(k,clamp(+o.value, 100));});
+    });
+    setV(k,getV(k));
+  });
+  paintClock();
+  document.querySelectorAll('[data-k="pulse"]').forEach(function(o){
+    o.addEventListener('input',function(){
+      var raw=parseFloat(o.value), v=Math.max(0,Math.min(120,isNaN(raw)?0:raw));
+      if(v!==raw)setV('pulse',v); else checkHead();
+    });
+  });
+  setV('pulse',Math.min(120,parseFloat(S.pulse!==undefined?S.pulse:70)||0));
+
+  // ===== ПРИВАЛ: укрытие, костёр, готовка =====
+  var COOKL=['meat_raw','canned','mushrooms','wild_carrot','potato','grain','water','salt'];
+  var COOKT={meat_raw:'meat',canned:'meat',mushrooms:'veg',wild_carrot:'veg',potato:'veg',grain:'grain',water:'water',salt:'spice'};
+  var COOKMAX=6, campSel={}, campMsg='';
+  function iname(o){var c=CAT[o.id];return c.n+(o.q?' ('+['','плохая','нормальная','отличная'][o.q]+')':'')+(o.broken?' (сломан)':'');}
+  function invGrids(){return Object.keys(S.inv).filter(function(k){return k!=='box';});}
+  function countItem(id){var n=0;invGrids().forEach(function(g){S.inv[g].forEach(function(o){if(o.id===id)n+=o.n;});});return n;}
+  function hasItem(id){return countItem(id)>0;}
+  function takeItem(id,qty){
+    invGrids().forEach(function(g){
+      S.inv[g].slice().forEach(function(o){
+        if(o.id!==id||qty<=0)return;
+        var t=Math.min(qty,o.n); o.n-=t; qty-=t;
+        if(o.n<=0)drop(o);
+      });
+    });
+  }
+  function shelterLevel(){return hasItem('tent')?2:hasItem('sleeping_bag')?1:0;}
+  function effStat(k){return Math.max(0,(S['st_'+k]||0)-penalties()[k]);}
+  function coldChance(f){
+    var c=[40,15,3][shelterLevel()];
+    if(f===undefined)f=!S.fireNear?0:(S.fireOwn?Math.min(1,numS('fireLeft')/8):1);
+    c-=10*f;
+    if(radTier()>=2)c+=10;
+    if(getV('hunger')<25)c+=10;
+    if(getV('thirst')<25)c+=5;
+    if(rainAt(nowMin()).rain&&shelterLevel()<2)c+=10;
+    c-=2*effStat('con'); c+=tn('cold');
+    return Math.max(0,Math.min(90,c));
+  }
+  function eatDish(o,b){
+    var m=[0,0.6,1,1.4][o.q||2];
+    setV('hunger',clamp(getV('hunger')+(b.hunger||0)*m));
+    setV('thirst',clamp(getV('thirst')+(b.thirst||0)*m));
+    if(o.q===3)setV('energy',clamp(getV('energy')+10));
+    if(b.warm!==false&&numS('cold')>0){S.cold=Math.max(0,numS('cold')-12*m);save();paintEffects();}
+    if(o.pz){
+      setV('infection',clamp(getV('infection')+20));
+      setV('thirst',clamp(getV('thirst')-15));
+      showAlert('Блюдо оказалось испорченным: отравление!',true);
+    } else if(b.warm!==false){
+      var q=o.q||2, hrs=[0,4,6,8][q], pct=[0,0.10,0.15,0.20][q], inf=getV('infection'), txt='Съедено: '+iname(o)+'. Сила +1 на '+hrs+' ч.';
+      S.fed=Math.max(numS('fed'),hrs);
+      if(inf>0){ setV('infection',clamp(inf*(1-pct))); txt+=' Инфекция снижена на '+Math.round(pct*100)+'%.'; }
+      save(); paintEffects();
+      showAlert(txt,false);
+    } else showAlert('Съедено: '+iname(o)+'.',false);
+  }
+  function forageChance(){return Math.min(0.6,0.25+0.03*effStat('sur'));}
+  // кладёт топливо в рюкзак; возвращает, сколько поместилось
+  function putFuel(tw,lg){
+    var r={t:0,l:0,lost:0};
+    for(var i=0;i<tw;i++){ if(placeBought('twigs','pack',false))r.t++; else r.lost++; }
+    for(var j=0;j<lg;j++){ if(placeBought('logs','pack',false))r.l++; else r.lost++; }
+    return r;
+  }
+  function fuelText(r){
+    var a=[]; if(r.t)a.push('ветки ×'+r.t); if(r.l)a.push('поленья ×'+r.l);
+    return (a.join(', ')||'ничего')+(r.lost?' (часть не поместилась в инвентарь)':'');
+  }
+  function woodLeft(){return S.woodLeft===undefined?3:Math.max(0,numS('woodLeft'));}
+  function axeEquipped(){return ['hand1','hand2'].some(function(h){return (S.inv['eq_'+h]||[]).some(function(o){return o.id==='axe';});});}
+  function forage(){
+    if(S.trader){S.trader=false;smsg('');paintShop();showInfo();}
+    var axe=axeEquipped();
+    if(!axe&&woodLeft()<=0){campMsg='Хворост у этого костра закончился. Возьмите топор в руки или смените место.';paintCamp();return;}
+    var r={t:0,l:0,lost:0};
+    if(Math.random()<(axe?0.05:0.15)){ campMsg=axe?'Срубить ничего подходящего не вышло.':'Час поисков, но ничего подходящего не нашлось.'; }
+    else{
+      var tw=1+Math.floor(Math.random()*3)+Math.floor(effStat('sur')/4), lg=Math.random()<(axe?0.4:0.15)?1:0;
+      r=putFuel(tw,lg); campMsg=(axe?'Нарублено: ':'Собрано: ')+fuelText(r)+'.';
+    }
+    if(!axe){ S.woodLeft=woodLeft()-1; if(S.woodLeft<=0)campMsg+=' Хворост вокруг закончился.'; }
+    commit(); advance(1,false,true);
+  }
+  // ===== ПОГОДА И ПРИВАЛ =====
+  function nowMin(){return S.clock!==undefined?S.clock:480;}
+  function rainWindow(day){
+    var w=weatherFor(day); if(['дождь','ливень','гроза'].indexOf(w.n)<0)return null;
+    var r=rngSeed('rain'+day), st=300+Math.floor(r()*13)*60;
+    return {s:st,e:st+(w.n==='дождь'?180:300)};
+  }
+  // идёт ли дождь в минуту t и сырой ли хворост (3 часа после дождя)
+  function rainAt(t){
+    var d=Math.floor(t/1440)+1;
+    for(var k=d;k>=Math.max(1,d-1);k--){
+      var w=rainWindow(k); if(!w)continue;
+      var a=(k-1)*1440+w.s, b=(k-1)*1440+w.e;
+      if(t>=a&&t<b)return {rain:true,end:b};
+      if(t>=b&&t<b+180)return {wet:true,until:b+180};
+    }
+    return {};
+  }
+  function rainOverlap(t0,t1){
+    for(var d=Math.floor(t0/1440)+1;d<=Math.floor(t1/1440)+1;d++){
+      var w=rainWindow(d); if(!w)continue;
+      if((d-1)*1440+w.s<t1&&(d-1)*1440+w.e>t0)return true;
+    }
+    return false;
+  }
+  function igniteChance(){
+    var c=Math.min(95,45+8*effStat('sur')+tn('fire')), x=rainAt(nowMin());
+    return x.rain?0:x.wet?Math.round(c/2):c;
+  }
+  function weatherLabel(){var x=rainAt(nowMin());return x.rain?'идёт дождь':x.wet?'после дождя, хворост сырой':'сухо';}
+  function lightFire(){
+    if(S.fireNear)return;
+    if(rainAt(nowMin()).rain){campMsg='Идёт дождь: костёр не развести.';paintCamp();return;}
+    if(!hasItem('matches')){campMsg='Нет спичек, костёр не развести.';paintCamp();return;}
+    takeItem('matches',1);
+    if(Math.random()*100>=igniteChance()){campMsg='Огонь не занялся (шанс был '+igniteChance()+'%). Спичка потрачена.'; commit(); return;}
+    S.fireNear=true; S.fireOwn=true; S.fireLeft=1; S.woodLeft=3;
+    campMsg='Костёр разожжён: он горит 1 час. Подбрасывайте ветки и поленья, чтобы он не погас.'; commit();
+  }
+  function putOutFire(){S.fireNear=false;S.fireOwn=false;S.fireLeft=0;campMsg='Костёр потушен.';save();paintEffects();paintCamp();}
+  function setFireNear(v){
+    if(v&&rainAt(nowMin()).rain){S.fireOwn=false;S.fireLeft=0;S.fireNear=false;campMsg='Идёт дождь: костра нет, он залит.';save();paintCamp();return;}
+    S.fireOwn=false; S.fireLeft=0; S.fireNear=!!v; if(v)S.woodLeft=3;
+    campMsg=v?'Вы у общего костра: тепло и готовка доступны, пока вы рядом.':'Вы отошли от костра.';
+    save(); paintEffects(); paintCamp();
+  }
+  function addFuel(id,hrs){
+    if(!S.fireNear||!S.fireOwn){campMsg='Подбрасывать топливо можно только в костёр, который вы развели сами.';paintCamp();return;}
+    if(!hasItem(id)){campMsg='Нет топлива: '+CAT[id].n+'.';paintCamp();return;}
+    if(numS('fireLeft')>=8){campMsg='Костёр уже горит на максимум (8 ч).';paintCamp();return;}
+    takeItem(id,1); S.fireLeft=Math.min(8,numS('fireLeft')+hrs);
+    campMsg='Вы подбросили '+CAT[id].n.toLowerCase()+': костёр горит ещё '+S.fireLeft.toFixed(1)+' ч.'; commit();
+  }
+  // старые сохранения: простой костёр превращаем в свой костёр на 1 час
+  if(S.fire&&!S.fireNear){S.fireNear=true;S.fireOwn=true;S.fireLeft=1;} delete S.fire;
+  function cook(){
+    if(!S.fireNear){campMsg='Сначала разведите костёр или отметьте, что он рядом.';paintCamp();return;}
+    if(!hasItem('pot')){campMsg='Нужен котелок.';paintCamp();return;}
+    var tags={meat:0,veg:0,grain:0,water:0,spice:0}, total=0, ids=Object.keys(campSel).filter(function(k){return campSel[k]>0;});
+    ids.forEach(function(id){tags[COOKT[id]]+=campSel[id];total+=campSel[id];});
+    if(total-tags.water-tags.spice<=0){campMsg='Добавьте в котелок что-нибудь съедобное, кроме воды и соли.';paintCamp();return;}
+    var key;
+    if(tags.water&&tags.grain)key='porridge';
+    else if(tags.water&&(tags.meat||tags.veg))key='stew';
+    else if(!tags.water&&(tags.meat||tags.veg))key='roast';
+    else key='slop';
+    var kinds=(tags.meat>0)+(tags.veg>0)+(tags.grain>0);
+    var sur=effStat('sur');
+    var score=kinds+(tags.spice?1:0)+Math.floor(sur/3)+(Math.floor(Math.random()*4)-2)+tn('cook');
+    var q=score>=4?3:score>=2?2:1;
+    if(key==='slop')q=1;
+    var pz=false;
+    if(campSel.mushrooms>0&&Math.random()<Math.max(0.05,0.25-0.02*sur))pz=true;
+    if(campSel.meat_raw>0&&q===1&&Math.random()<0.4)pz=true;
+    var snap=JSON.stringify(S.inv);
+    ids.forEach(function(id){takeItem(id,campSel[id]);});
+    var d={id:key,n:1,x:0,y:0,r:0,q:q}; if(pz)d.pz=1;
+    if(!(auto('pack',d)||auto('belt',d))){S.inv=JSON.parse(snap);campMsg='Нет места в инвентаре для готового блюда.';paintCamp();return;}
+    sel={o:d}; campSel={};
+    campMsg='Готово: '+iname(d)+(q===1?'. Что-то пошло не так...':q===3?'. Получилось отлично!':'.');
+    commit(); advance(0.5,false,true);
+  }
+  function paintCamp(){
+    var box=document.getElementById('camp-body'); if(!box)return;
+    var off=!!S.campOff; box.style.display=off?'none':'';
+    var ch=document.getElementById('camp-h'), ctg=document.getElementById('camp-tg');
+    if(ctg)ctg.textContent=off?'[развернуть]':'[свернуть]';
+    if(ch)ch.setAttribute('aria-expanded',off?'false':'true');
+    box.innerHTML='';
+    var lv=shelterLevel(), pot=hasItem('pot'), fire=!!S.fireNear, cold=numS('cold');
+    var st=mk('div','st');
+    [['Укрытие',['нет','спальник','палатка'][lv]],['Костёр',fire?(S.fireOwn?'горит ещё '+numS('fireLeft').toFixed(1)+' ч':'рядом (общий)'):'нет'],['Котелок',pot?'есть':'нет'],
+     ['Погода',weatherLabel()],['Шанс развести костёр',igniteChance()+'%'],['Шанс простуды при сне',Math.round(coldChance())+'%'],['Простуда',cold>0?'ещё '+Math.ceil(cold)+' ч':'нет']].forEach(function(r){
+      var sp=mk('span','',r[0]+': '); sp.appendChild(mk('b','',r[1])); st.appendChild(sp);
+    });
+    box.appendChild(st);
+    var fc=mk('div','campcard'); fc.appendChild(mk('div','ct','КОСТЁР'));
+    var fr=mk('div','fireRow');
+    var lab=document.createElement('label'); lab.className='fireChk';
+    var cbx=document.createElement('input'); cbx.type='checkbox'; cbx.checked=fire;
+    cbx.onchange=function(){setFireNear(cbx.checked);};
+    lab.appendChild(cbx); lab.appendChild(document.createTextNode('Костёр рядом (общий для группы)'));
+    var fb=mk('button','t','Развести костёр (−1 спички)'); fb.disabled=fire; fb.onclick=lightFire;
+    fr.appendChild(lab); fr.appendChild(fb); fc.appendChild(fr);
+    if(fire&&S.fireOwn){
+      var fu=mk('div','fireRow');
+      [['twigs','+ Ветки (+0,5 ч)',0.5],['logs','+ Поленья (+2 ч)',2]].forEach(function(f){
+        var bt=mk('button','t',f[1]+' · есть: '+countItem(f[0])); bt.disabled=!hasItem(f[0]);
+        bt.onclick=function(){addFuel(f[0],f[2]);}; fu.appendChild(bt);
+      });
+      var po=mk('button','t','Потушить'); po.onclick=putOutFire; fu.appendChild(po);
+      fc.appendChild(fu);
+    } else if(fire){
+      fc.appendChild(mk('div','msg','Костёр ведёт кто-то из группы: топливо подбрасывает он. Снимите галочку, когда отойдёте.'));
+    }
+    box.appendChild(fc);
+    var gc=mk('div','campcard'); gc.appendChild(mk('div','ct','ХВОРОСТ'));
+    var gr=mk('div','fireRow');
+    var axe=axeEquipped(), left=woodLeft(), dry=!axe&&left<=0;
+    var gb=mk('button','t',axe?'Нарубить хвороста (1 ч)':'Собрать хворост (1 ч)'); gb.disabled=dry; gb.onclick=forage; gr.appendChild(gb);
+    gr.appendChild(mk('span','',axe?'Топор в руках: хворост здесь не заканчивается, чаще попадаются поленья.':
+      dry?'Хворост у этого костра закончился. Возьмите топор в руки или смените место (новый костёр).':
+      'Шанс найти около 85%. Хвороста у этого костра хватит ещё на сборов: '+left+'.'));
+    gc.appendChild(gr); box.appendChild(gc);
+    var fo=document.getElementById('forage-on');
+    if(fo){ fo.checked=!!S.forage; fo.disabled=false;
+      var fh=document.getElementById('forage-hint'); if(fh)fh.textContent='(шанс ~'+Math.round(forageChance()*100)+'% за полчаса; снимает галочку «Торговец рядом»)'; }
+    box.appendChild(mk('h3','','КОТЕЛОК'));
+    var any=false, total=0;
+    COOKL.forEach(function(id){campSel[id]=Math.min(campSel[id]||0,countItem(id)); total+=campSel[id];});
+    COOKL.forEach(function(id){
+      var have=countItem(id); if(have<=0)return; any=true;
+      var row=mk('div','row'), nm=mk('span','',CAT[id].n+' (есть: '+have+')'), q=mk('div','qty');
+      var minus=mk('button','t','−'), val=mk('b','',String(campSel[id]||0)), plus=mk('button','t','+');
+      minus.onclick=function(){if((campSel[id]||0)>0){campSel[id]--;paintCamp();}};
+      plus.onclick=function(){
+        var t=0;COOKL.forEach(function(k){t+=campSel[k]||0;});
+        if(t>=COOKMAX){campMsg='В котелок помещается не больше '+COOKMAX+' продуктов.';paintCamp();return;}
+        if((campSel[id]||0)<have){campSel[id]=(campSel[id]||0)+1;paintCamp();}
+      };
+      q.appendChild(minus);q.appendChild(val);q.appendChild(plus);
+      row.appendChild(nm);row.appendChild(q);box.appendChild(row);
+    });
+    if(!any)box.appendChild(mk('div','msg','Нет продуктов для готовки.'));
+    var cb=mk('button','t','Готовить (30 мин)');
+    cb.style.background='#1d5a30'; cb.disabled=!(fire&&pot&&total>0);
+    cb.onclick=cook; box.appendChild(cb);
+    if(!fire||!pot)box.appendChild(mk('div','msg',(!pot?'Нужен котелок. ':'')+(!fire?'Нужен костёр.':'')));
+    if(campMsg)box.appendChild(mk('div','msg',campMsg));
+    box.appendChild(emissionCard());
+  }
+
+  // ===== КОМНАТА: обмен вещами и лечение между листами (опубликованная страница) =====
+  var ROOMR={bandage:1,tourniquet:1,spray:1,firstaid:1,tweezers:1,ointment:1};
+  var HEALR={cut:['bandage','tourniquet','spray','firstaid'],gun:['tweezers','firstaid'],burn:['ointment','spray','firstaid']};
+  var RM={cap:null,nr:null,unsub:[],pend:{},inc:[],seen:{},log:'',rn:'camp'};
+  function rmPeers(){return RM.nr?RM.nr.peers():[];}
+  function rmMe(){var p=rmPeers().filter(function(x){return x.isMe&&x.sameTab;})[0];return p?p.peer:null;}
+  function rmName(peer){var p=rmPeers().filter(function(x){return x.peer===peer;})[0];return p&&p.presence&&p.presence.n?String(p.presence.n):'Игрок';}
+  function rmLog(t){RM.log=t;paintRoom();}
+  function woundLine(){
+    var a=Object.keys(PN).filter(function(id){return wList(id).length;}).map(function(id){
+      return PN[id]+': '+wList(id).map(function(w){return WT[w.t][0].toLowerCase()+(w.s>1?' (тяж.)':'');}).join(', ');
+    });
+    return a.length?a.join('; ').slice(0,400):'ран нет';
+  }
+  window.__roomPres=function(){ if(RM.nr)RM.nr.presence({n:String(S.name||'Без имени').slice(0,40),w:woundLine()}); };
+  function cleanItem(it){
+    if(!it||typeof it.id!=='string'||!CAT[it.id]||CAT[it.id].c==='key')return null;
+    var c=CAT[it.id], d={id:it.id,n:1,x:0,y:0,r:0};
+    if(it.q>=1&&it.q<=3)d.q=it.q|0;
+    if(it.pz)d.pz=1;
+    if(typeof it.m==='number'&&c.maxMag)d.m=Math.max(0,Math.min(c.maxMag,it.m|0));
+    if(typeof it.ch==='number'&&c.maxCharge!==undefined)d.ch=Math.max(0,Math.min(c.maxCharge,it.ch));
+    return d;
+  }
+  function placeGift(d){return CAT[d.id].st>1?placeBought(d.id,'pack',false):(auto('pack',d)||auto('belt',d));}
+  function healAny(med){
+    var res={ok:false,txt:'У пациента нет раны, которую это средство вылечит.'};
+    Object.keys(PN).some(function(id){
+      var ws=wList(id);
+      for(var i=0;i<ws.length;i++){
+        var w=ws[i];
+        if(!w.auto&&HEALR[w.t]&&HEALR[w.t].indexOf(med)>-1){
+          ws.splice(i,1); pulseAdd((WW[w.t]||0)*w.s); paintBody(); commit();
+          res={ok:true,txt:'Рана вылечена: '+CAT[med].n+' ('+PN[id]+').'}; return true;
+        }
+      }
+      return false;
+    });
+    return res;
+  }
+  function rmSend(peer,k){
+    var o=sel&&sel.o;
+    if(!o||!listOf(o)){rmLog('Сначала выберите предмет в своём инвентаре.');return;}
+    if(k==='give'&&CAT[o.id].c==='key'){rmLog('Этот предмет передавать нельзя.');return;}
+    if(k==='heal'&&!ROOMR[o.id]){rmLog('Для лечения выберите бинт, жгут, спрей, аптечку, пинцет или мазь.');return;}
+    var id=Math.random().toString(36).slice(2,10);
+    RM.pend[id]={o:o,to:peer,k:k};
+    var data={id:id,to:peer,k:k};
+    if(k==='give')data.item={id:o.id,q:o.q,pz:o.pz,m:o.m,ch:o.ch}; else data.med=o.id;
+    RM.nr.emit('offer',data).catch(function(e){rmLog('Не удалось отправить: '+(e&&e.code||'ошибка')+'. Нужен доступ не ниже «Участник».');});
+    rmLog((k==='give'?'Предложение передать «':'Предложение лечить: «')+iname(o)+'» отправлено игроку '+rmName(peer)+'. Ждём ответ.');
+  }
+  function rmOffer(m){
+    var d=m.data;
+    if(!d||m.isMe||typeof d.id!=='string'||d.to!==rmMe()||RM.seen[d.id])return;
+    RM.seen[d.id]=1;
+    if(d.k==='give'){var it=cleanItem(d.item); if(!it)return; RM.inc.push({id:d.id,from:m.peer,k:'give',item:it});}
+    else if(d.k==='heal'&&ROOMR[d.med])RM.inc.push({id:d.id,from:m.peer,k:'heal',med:d.med});
+    else return;
+    paintRoom();
+  }
+  function rmAnswer(i,yes){
+    var r={id:i.id,to:i.from,ok:false,why:'Игрок отказался.'};
+    if(yes){
+      if(i.k==='give'){ if(placeGift(i.item)){r.ok=true;r.why='Принято: '+iname(i.item)+'.';commit();} else r.why='У получателя нет места.'; }
+      else{ var h=healAny(i.med); r.ok=h.ok; r.why=h.txt; }
+      showAlert(r.ok?r.why:('Не вышло: '+r.why),!r.ok);
+    }
+    RM.inc=RM.inc.filter(function(x){return x!==i;});
+    RM.nr.emit('reply',r); paintRoom();
+  }
+  function rmReply(m){
+    var d=m.data, p=d&&RM.pend[d.id];
+    if(!p||m.peer!==p.to)return;
+    delete RM.pend[d.id];
+    if(d.ok&&listOf(p.o)){ if(p.k==='give'||p.o.id!=='tweezers')dec(p.o); commit(); }
+    showAlert(String(d.why||'Готово.').slice(0,200),!d.ok);
+    paintRoom();
+  }
+  async function rmJoin(){
+    var nm='r-'+(RM.rn||'camp').toLowerCase().replace(/[^a-z0-9_.-]/g,'-').slice(0,40);
+    try{ RM.nr=await RM.cap.join(nm); }catch(e){ rmLog('Не удалось войти в комнату.'); return; }
+    RM.unsub=[RM.nr.onPeers(paintRoom),RM.nr.on('offer',rmOffer),RM.nr.on('reply',rmReply)];
+    window.__roomPres(); paintRoom();
+  }
+  async function rmLeave(){
+    RM.unsub.forEach(function(f){f();}); RM.unsub=[];
+    try{ await RM.nr.leave(); }catch(e){}
+    RM.nr=null; RM.inc=[]; paintRoom();
+  }
+  function paintRoom(){
+    var b=document.getElementById('room-body'); if(!b)return;
+    b.innerHTML='';
+    if(!RM.cap){ b.appendChild(mk('div','msg','Комната работает только внутри Owlbear Rodeo. В обычном файле или в браузере вне стола она недоступна.')); return; }
+    var top=mk('div','fireRow');
+    if(!RM.nr){
+      var inp=document.createElement('input'); inp.value=RM.rn; inp.placeholder='название комнаты (латиницей)';
+      inp.oninput=function(){RM.rn=inp.value;};
+      var jb=mk('button','t','Войти в комнату'); jb.onclick=rmJoin;
+      top.appendChild(inp); top.appendChild(jb); b.appendChild(top);
+      b.appendChild(mk('div','msg','Игроки этого стола Owlbear Rodeo, у которых открыт лист, видят друг друга. Название комнаты не важно: комнатой служит ваш стол.'));
+    } else {
+      top.appendChild(mk('b','','Комната: '+RM.rn)); var lb=mk('button','t','Выйти'); lb.onclick=rmLeave; top.appendChild(lb); b.appendChild(top);
+      var o=sel&&sel.o&&listOf(sel.o)?sel.o:null;
+      b.appendChild(mk('div','msg',o?'Выбран предмет: '+iname(o):'Выберите предмет в инвентаре, затем нажмите кнопку у игрока.'));
+      var others=rmPeers().filter(function(x){return !x.isMe&&x.kind==='viewer';});
+      if(!others.length)b.appendChild(mk('div','msg','В комнате пока никого нет.'));
+      others.forEach(function(p){
+        var c=mk('div','campcard'); c.appendChild(mk('div','ct',String(p.presence.n||'Игрок').toUpperCase()));
+        c.appendChild(mk('div','',String(p.presence.w||'')));
+        var r=mk('div','fireRow');
+        var g=mk('button','t','Передать выбранное'); g.onclick=function(){rmSend(p.peer,'give');};
+        var h=mk('button','t','Лечить выбранным'); h.onclick=function(){rmSend(p.peer,'heal');};
+        r.appendChild(g); r.appendChild(h); c.appendChild(r); b.appendChild(c);
+      });
+      RM.inc.forEach(function(i){
+        var c=mk('div','campcard'); c.appendChild(mk('div','ct','ВХОДЯЩЕЕ'));
+        c.appendChild(mk('div','',rmName(i.from)+(i.k==='give'?' передаёт вам: '+iname(i.item):' хочет применить: '+CAT[i.med].n)));
+        var r=mk('div','fireRow');
+        var y=mk('button','t','Принять'); y.onclick=function(){rmAnswer(i,true);};
+        var n=mk('button','t','Отказаться'); n.onclick=function(){rmAnswer(i,false);};
+        r.appendChild(y); r.appendChild(n); c.appendChild(r); b.appendChild(c);
+      });
+    }
+    if(RM.log)b.appendChild(mk('div','msg',RM.log));
+  }
+  window.__roomRepaint=function(){if(RM.nr)paintRoom();};
+  paintRoom();
+  if(window.claude&&claude.use)claude.use('room').then(function(c){RM.cap=c;paintRoom();},function(){});
+  document.querySelector('[data-k="name"]').addEventListener('input',function(){if(window.__roomPres)window.__roomPres();if(window.__tokenSync)window.__tokenSync();});
+
+  // ===== РАДИО: известные частоты =====
+  var RADIO=[
+    {id:'meteo',n:'Метео-3',f:'88.4',d:'Прогноз погоды',w:[[360,390],[1080,1110]]},
+    {id:'alarm',n:'Сигнал',f:'101.7',d:'Предупреждения об опасности',w:[[720,750],[1260,1290]]},
+    {id:'news',n:'Радио Пустошь',f:'95.2',d:'Новости и слухи',w:[[510,540],[840,870],[1170,1200],[1380,1410]]},
+    {id:'trade',n:'Торговый эфир',f:'112.3',d:'Дефицит и цены',w:[[600,630]]},
+    {id:'num',n:'Числа',f:'63.0',d:'Загадочная станция',w:[[0,180]]}
+  ];
+  var radioMsg='';
+  function hhmm(m){return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}
+  function rngSeed(str){var h=2166136261;for(var i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}
+    return function(){h+=0x6D2B79F5;var t=Math.imul(h^h>>>15,1|h);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function weatherFor(day){
+    var r=rngSeed('w'+day), W=[['ясно','сухо, видимость хорошая'],['облачно','без осадков, но небо тяжёлое'],
+      ['дождь','дождь тушит костры, а после него хворост сырой около трёх часов'],['ливень','сильный дождь тушит костры, хворост потом сырой; нужно укрытие, шанс простуды выше'],
+      ['туман','видимость плохая, стрелять вслепую труднее'],['гроза','гроза с дождём: костры гаснут, возможны помехи в эфире'],
+      ['пыльная буря','ветер несёт радиоактивную пыль, наденьте маску']];
+    var w=W[Math.floor(r()*W.length)]; return {n:w[0],t:w[1],temp:Math.round(-4+r()*26)};
+  }
+  function broadcast(ch,day,slot){
+    var r=rngSeed(ch.id+day+'_'+slot), pk=function(a){return a[Math.floor(r()*a.length)];};
+    var PL=['Депо','Старый мост','Рынок','Склады','Больница','Карьер','Элеватор','Блокпост 7'];
+    if(ch.id==='meteo'){
+      var wd=weatherFor(slot?day+1:day);
+      return 'Говорит «Метео-3». Прогноз на '+(slot?'завтра':'сегодня')+': '+wd.n+', '+wd.temp+' градусов. '+wd.t.charAt(0).toUpperCase()+wd.t.slice(1)+'.'+(function(){var rw=rainWindow(slot?day+1:day);return rw?' Осадки ожидаются примерно с '+hhmm(rw.s)+' до '+hhmm(rw.e)+'.':'';})();
+    }
+    if(ch.id==='alarm'){
+      var T=['Повышенный радиационный фон в районе «%p». Не задерживайтесь.','В районе «%p» замечены стаи одичавших собак. Двигайтесь группой.',
+        'На дороге у «%p» орудует банда. Свидетелей не оставляют.','Аномалии у «%p» стали сильнее. Обходите стороной.',
+        'Колодцы у «%p» заражены. Воду не пить.','Обрушения в районе «%p». Проход закрыт.','В районе «%p» слышны глухие взрывы. Причина неизвестна.'];
+      var a=pk(T), b=pk(T); if(b===a)b=pk(T);
+      return 'Станция «Сигнал». Внимание, предупреждение. '+a.replace('%p',pk(PL))+' '+b.replace('%p',pk(PL))+(function(){var em=emissionFor(slot?day+1:day);return (em&&(slot||em.s>=720))?' '+(slot?'Завтра':'Сегодня')+' около '+hhmm(em.s)+' ожидается выброс. Всем найти укрытие заранее.':'';})()+' Берегите себя.';
+    }
+    if(ch.id==='news'){
+      var N=['Торговец на рынке снова открыл лавку и обещает честные цены. Никто не верит.','Старик у карьера клянётся, что слышал гул под землёй.',
+        'В Депо видели свет в окнах. Никто не вернулся проверить.','Диктор желает слушателям пережить эту ночь. Он желает этого каждую ночь.',
+        'Над городом пролетело что-то большое и бесшумное. Объяснений нет.','Тугрик слегка укрепился. Курс ничего не значит, но приятно.',
+        'Голос читает старую считалку и пропадает в помехах.','Северная группа обещает награду за собаку по кличке Дым.',
+        'Кто-то настойчиво просит вернуть красный рюкзак. Подробностей нет.','Тихая музыка на старом аккордеоне. Эфир оборвался на полуслове.',
+        'Метеоролог извиняется за вчерашний прогноз. Он был оптимистичным.','На частоте слышен детский плач, затем гудки. Источник лучше не искать.'];
+      var n1=pk(N), n2=pk(N); if(n2===n1)n2=pk(N);
+      return 'Радио «Пустошь», новости. '+n1+' '+n2;
+    }
+    if(ch.id==='trade'){
+      var G=['бинты','фильтры','патроны','спички','консервы','батарейки','антирад','соль'];
+      var x=pk(G), y=pk(G), z=pk(G); if(y===x)y=G[(G.indexOf(x)+1)%G.length]; if(z===x||z===y)z=G[(G.indexOf(y)+2)%G.length];
+      return 'Торговый эфир. В дефиците: '+x+' и '+y+'. Лишнего хватает: '+z+'. Приходите с тугриками.';
+    }
+    var D=['ноль','один','два','три','четыре','пять','шесть','семь','восемь','девять'], q=[];
+    for(var i=0;i<10;i++)q.push(pk(D));
+    return 'Ровный женский голос читает числа: '+q.join(', ')+'. Повтор. Сообщение передано трижды, затем тишина.';
+  }
+  function listen(ch){
+    var c=S.clock!==undefined?S.clock:480, m=c%1440, day=Math.floor(c/1440)+1, slot=-1;
+    ch.w.forEach(function(w,i){if(m>=w[0]&&m<w[1])slot=i;});
+    if(slot<0)radioMsg='Шипение и треск. На частоте '+ch.f+' сейчас никто не вещает.';
+    else{
+      var txt=broadcast(ch,day,slot); radioMsg=txt;
+      S.radioLog=S.radioLog||[];
+      var last=S.radioLog[0];
+      if(!(last&&last.x===txt))S.radioLog.unshift({t:'День '+day+', '+hhmm(m),c:ch.n+' '+ch.f,x:txt});
+      S.radioLog=S.radioLog.slice(0,8);
+    }
+    save(); paintRadio(); advance(0.25,false,true);
+  }
+  function paintRadio(){
+    var b=document.getElementById('radio-known'); if(!b)return; b.innerHTML='';
+    b.appendChild(mk('h3','','ИЗВЕСТНЫЕ ЧАСТОТЫ'));
+    RADIO.forEach(function(ch){
+      var row=mk('div','srow'), nm=mk('div','',ch.n+' · '+ch.f+' МГц');
+      nm.appendChild(mk('small','',ch.d+'. Эфир: '+ch.w.map(function(w){return hhmm(w[0])+'–'+hhmm(w[1]);}).join(', ')));
+      var bt=mk('button','t','Слушать (15 мин)'); bt.onclick=function(){listen(ch);};
+      row.appendChild(nm); row.appendChild(mk('span','')); row.appendChild(bt); b.appendChild(row);
+    });
+    if(radioMsg)b.appendChild(mk('div','msg',radioMsg));
+    if(S.radioLog&&S.radioLog.length){
+      b.appendChild(mk('h3','','ЖУРНАЛ ПРОСЛУШАННОГО'));
+      S.radioLog.forEach(function(e){
+        var d=mk('div','row'), t=mk('div','',e.c+' · '+e.t); t.style.color='#c9a24a'; t.style.fontSize='.7rem';
+        var x=mk('div','',e.x); x.style.fontSize='.74rem'; d.style.display='block'; d.appendChild(t); d.appendChild(x); b.appendChild(d);
+      });
+    }
+  }
+  paintRadio();
+
+  // ===== СВОРАЧИВАНИЕ КАЖДОЙ ВКЛАДКИ =====
+  (function(){
+    S.fold=S.fold||{};
+    document.querySelectorAll('h2').forEach(function(h){
+      if(h.id==='camp-h')return;
+      var key=h.textContent.trim(), tg=document.createElement('span');
+      tg.style.cssText='font-size:.7rem;opacity:.75;letter-spacing:.05em;margin-left:6px;font-weight:normal';
+      h.appendChild(tg); h.style.cursor='pointer'; h.setAttribute('role','button'); h.tabIndex=0;
+      function apply(){
+        var off=!!S.fold[key], n=h.nextElementSibling;
+        while(n){n.classList.toggle('fold-hide',off); n=n.nextElementSibling;}
+        tg.textContent=off?'[развернуть]':'[свернуть]'; h.setAttribute('aria-expanded',off?'false':'true');
+      }
+      function tgl(){S.fold[key]=!S.fold[key];save();apply();}
+      h.addEventListener('click',tgl);
+      h.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();tgl();}});
+      apply();
+    });
+  })();
+
+  // ===== АНОМАЛИИ И АРТЕФАКТЫ =====
+  var ART={pebble:{v:90,r:0.2,w:35},drops:{v:120,r:0.3,w:30},shell:{v:140,r:0.4,w:28},jelly:{v:160,r:0.5,w:25},thorn:{v:200,r:0.6,w:22},spark:{v:250,r:0.8,w:20},firefly:{v:320,r:0.9,w:14},
+    stoneflower:{v:400,r:-0.6,w:12},frostmoss:{v:450,r:-0.3,w:10},amber:{v:520,r:0.5,w:8},moonlight:{v:600,r:1.5,w:8},heartstone:{v:700,r:1.8,w:6},compass:{v:900,r:2.5,w:5},crown:{v:1200,r:3.0,w:3}};
+  var anomMsg='';
+  function artRad(){
+    if(!ART||!S.inv)return 0; var t=0;
+    Object.keys(S.inv).forEach(function(g){if(g!=='box'&&g!=='vault')S.inv[g].forEach(function(o){if(ART[o.id])t+=ART[o.id].r*(o.n||1);});});
+    return t;
+  }
+  function vaultOn(){return hasItem('artcase');}
+  var FIELDS=['Ржавая балка','Тихий карьер','Мёртвая роща','Стеклянное поле','Чёрный овраг','Горелая ферма','Туманная низина','Старый полигон'];
+  function fieldName(){return FIELDS[(S.field||0)%FIELDS.length];}
+  function anomLeft(){return S.anomLeft===undefined?4:Math.max(0,numS('anomLeft'));}
+  function searchChance(){return Math.max(10,Math.min(85,35+3*effStat('sur')+2*effStat('int')+(hasItem('detector')?15:0)+tn('find')));}
+  function hazardChance(){return Math.max(5,Math.min(60,30-2*effStat('sur')-(hasItem('detector')?10:0)));}
+  function pickArt(){
+    var k=Object.keys(ART), tot=0; k.forEach(function(i){tot+=ART[i].w;});
+    var r=Math.random()*tot; for(var j=0;j<k.length;j++){r-=ART[k[j]].w; if(r<=0)return k[j];} return k[0];
+  }
+  function leaveTrader(){if(S.trader){S.trader=false;smsg('');paintShop();showInfo();}}
+  function searchAnomaly(){
+    leaveTrader();
+    if(anomLeft()<=0){anomMsg='Это поле выработано. Смените его.';paintAnom();return;}
+    var out=[];
+    if(Math.random()*100<hazardChance()){
+      if(Math.random()<0.5){
+        var pts=['larm','rarm','lleg','rleg','torso'], pt=pts[Math.floor(Math.random()*pts.length)];
+        wList(pt).push({t:'burn',s:1}); paintBody(); out.push('Аномалия обожгла вас: ожог ('+PN[pt].toLowerCase()+').');
+      } else { var d=8+Math.floor(Math.random()*13); setV('rad',clamp(getV('rad')+d)); out.push('Радиационный всплеск: +'+d+' мЗв.'); }
+    }
+    if(Math.random()*100<searchChance()){
+      var id=pickArt();
+      var ao=mkItem(id), okp=(vaultOn()&&auto('vault',ao))||auto('pack',ao)||auto('belt',ao); if(okp)sel={o:ao};
+      out.push(okp?'Найден артефакт: '+CAT[id].n+'.':'Нашли «'+CAT[id].n+'», но некуда положить, пришлось оставить.');
+    } else out.push('Ничего ценного не нашлось.');
+    S.anomLeft=anomLeft()-1; anomMsg=out.join(' ');
+    commit(); advance(2,false,true);
+  }
+  function changeField(){
+    leaveTrader(); S.anomLeft=4; S.field=((S.field||0)+1+Math.floor(Math.random()*(FIELDS.length-1)))%FIELDS.length; anomMsg='Вы добрались до нового аномального поля: «'+fieldName()+'».'; save(); advance(3,false,true); paintAnom();
+  }
+  // ===== БОЛТЫ И ПУТЬ ВПЕРЁД =====
+  var LIMBS=['larm','rarm','lleg','rleg'];
+  function handLost(k){return !!(S.lost&&((k==='hand1'&&S.lost.larm)||(k==='hand2'&&S.lost.rarm)));}
+  function installProsth(ids){
+    var id=ids.filter(function(i){return S.lost&&S.lost[i];})[0];
+    if(!id){showAlert('Нет потерянной конечности, на которую можно поставить протез.',true);return false;}
+    delete S.lost[id]; S.prosth=S.prosth||{}; S.prosth[id]=true;
+    save(); paintBody(); showAlert('Протез установлен: '+PN[id]+'. Он слегка хуже родной конечности.',false);
+  }
+  function prosthN(ids){return ids.filter(function(i){return S.prosth&&S.prosth[i]&&!(S.lost&&S.lost[i]);}).length;}
+  function lostN(ids){return ids.filter(function(i){return S.lost&&S.lost[i];}).length;}
+  function anBurn(n,pool){var o=applyAnomaly(n,pool);return o.length?'ожоги ('+o.join(', ')+').':'повреждать нечего.';}
+  function findFlashlight(){var f=null;Object.keys(S.inv).forEach(function(g){if(g==='box')return;S.inv[g].forEach(function(o){if(o.id==='flashlight'&&(!f||o.on))f=o;});});return f;}
+  function anShock(){
+    var o=applyAnomaly(1,LIMBS), fl=findFlashlight(), t=' Фонарика не было.';
+    if(fl){fl.ch=0;fl.on=false;fl.broken=true;t=' Фонарик сломан.';}
+    commit(); return 'удар током: ожог ('+(o[0]||'нет цели')+').'+t;
+  }
+  function anHalluc(){var h=2+Math.floor(Math.random()*5)/2; S.halluc=Math.max(numS('halluc'),h); save(); paintEffects(); return 'галлюцинации на '+h+' ч.';}
+  function anLoss(){
+    var pool=LIMBS.filter(function(i){return !(S.lost&&S.lost[i]);}); if(!pool.length)return 'терять уже нечего.';
+    var pt=pool[Math.floor(Math.random()*pool.length)]; S.lost=S.lost||{}; S.lost[pt]=true; if(S.prosth)delete S.prosth[pt]; S.wounds[pt]=[];
+    var hs={larm:'eq_hand1',rarm:'eq_hand2'}[pt];
+    if(hs)S.inv[hs].slice().forEach(function(o){drop(o);o.x=0;o.y=0;o.r=0;if(!auto('pack',o)&&!auto('belt',o)){S.inv.box=S.inv.box||[];S.inv.box.push(o);}});
+    save(); paintBody(); commit(); return 'потеряна конечность: '+PN[pt]+'.';
+  }
+  function anCuts(n,pool){var o=applyAnomaly(n,pool,'cut');return o.length?'рваные раны ('+o.join(', ')+').':'повреждать нечего.';}
+  function anCrater(){wList('torso').push({t:'cut',s:2}); pulseAdd(-(WW.cut||0)*2); paintBody(); return 'смятие: тяжёлая рваная рана (Торс).';}
+  function anGeyser(){var d=15+Math.floor(Math.random()*16); setV('rad',clamp(getV('rad')+d)); return 'выброс радиации: +'+d+' мЗв.';}
+  function anFrost(){S.cold=Math.max(numS('cold'),72); save(); paintEffects(); return 'вы продрогли до костей: простуда на трое суток.';}
+  function anCarousel(){var h=2+Math.floor(Math.random()*3); advance(h,false,true); return 'вы кружили '+h+' ч и потеряли время.';}
+  function anMagnet(){
+    var n=0; ['eq_hand1','eq_hand2'].forEach(function(g){
+      S.inv[g].slice().forEach(function(o){
+        if(CAT[o.id].c!=='weapon')return;
+        drop(o); o.x=0;o.y=0;o.r=0; if(CAT[o.id].maxMag)o.m=0; n++;
+        if(!auto('pack',o)&&!auto('belt',o)){S.inv.box=S.inv.box||[];S.inv.box.push(o);}
+      });
+    });
+    commit(); return n?'оружие вырвало из рук, магазины опустели ('+n+' шт.).':'оружия в руках не было.';
+  }
+  function anRoar(){var h=2+Math.floor(Math.random()*2); S.deaf=Math.max(numS('deaf'),h); save(); paintEffects(); return 'оглушение на '+h+' ч.';}
+  function anDry(){setV('thirst',clamp(getV('thirst')-30)); setV('hunger',clamp(getV('hunger')-10)); return 'иссушающий ветер: жажда −30, голод −10.';}
+  function anBlind(){var h=1+Math.floor(Math.random()*2); S.blind=Math.max(numS('blind'),h); save(); paintEffects(); return 'ослепление на '+h+' ч.';}
+  var ANT=[['Жарка',18,function(){return anBurn(2,['lleg','rleg']);},'жар из-под земли: ожоги ног'],
+    ['Огненная вспышка',12,function(){return anBurn(3,LIMBS);},'огненный шар: три ожога на руки и ноги'],
+    ['Кислотный туман',10,function(){return anBurn(3,LIMBS.concat(['torso']));},'разъедающий туман: три ожога на конечности и торс'],
+    ['Электрошок',12,anShock,'разряд: ожог на случайную конечность и поломка фонарика'],
+    ['Мираж',10,anHalluc,'галлюцинации на 2–4 часа'],
+    ['Мясорубка',4,anLoss,'сминающая аномалия: потеря случайной конечности'],
+    ['Трамплин',14,function(){return anCuts(2,LIMBS);},'подбрасывает и швыряет оземь: две рваные раны на конечности'],
+    ['Воронка',8,anCrater,'втягивает и мнёт: тяжёлая рваная рана на торсе'],
+    ['Радиоактивный гейзер',10,anGeyser,'выброс радиации: +15–30 мЗв'],
+    ['Морозилка',10,anFrost,'ледяной вихрь: простуда на трое суток'],
+    ['Карусель',10,anCarousel,'кружит на месте: теряется 2–4 часа'],
+    ['Магнит',8,anMagnet,'вырывает оружие из рук и опустошает магазины'],
+    ['Рёв',8,anRoar,'оглушающий звук: оглушение на 2–3 часа'],
+    ['Сухой ветер',10,anDry,'иссушает: жажда −30, голод −10'],
+    ['Слепящий свет',8,anBlind,'яркая вспышка: ослепление на 1–2 часа']];
+  function pickAnt(){var t=0;ANT.forEach(function(a){t+=a[1];});var r=Math.random()*t;for(var i=0;i<ANT.length;i++){r-=ANT[i][1];if(r<=0)return i;}return 0;}
+  function paintLost(){
+    var el=document.getElementById('lost-list'); if(!el||!LIMBS)return; el.innerHTML='';
+    LIMBS.forEach(function(id){
+      if(!(S.lost&&S.lost[id]))return;
+      var b=mk('button','t','Вернуть: '+PN[id]); b.onclick=function(){delete S.lost[id];save();paintBody();commit();};
+      el.appendChild(b);
+    });
+  }
+  var pathRes=null;
+  function applyAnomaly(count,pool,type){ type=type||'burn';
+    pool=pool.filter(function(i){return !(S.lost&&S.lost[i]);});
+    var parts=[], out=[]; if(!pool.length)return out;
+    for(var i=0;i<count;i++){
+      if(!parts.length)parts=pool.slice();
+      var pt=parts.splice(Math.floor(Math.random()*parts.length),1)[0], sv=Math.random()<0.25?2:1;
+      wList(pt).push({t:type,s:sv}); pulseAdd(-(WW[type]||0)*sv); out.push(PN[pt]+(sv>1?' (тяж.)':''));
+    }
+    save(); paintBody(); return out;
+  }
+  document.getElementById('anom-btn').onclick=function(){
+    var n=Math.max(1,Math.min(8,parseInt(document.getElementById('anom-n').value)||1)), ty=document.getElementById('anom-type').value;
+    var nm=ty==='burn'?'Ожоги':ANT[parseInt(ty)][0];
+    var r=ty==='burn'?anBurn(n,LIMBS):ANT[parseInt(ty)][2]();
+    showAlert('Аномалия «'+nm+'»: '+r,true);
+  };
+  (function(){
+    var sl=document.getElementById('anom-type'), ds=document.getElementById('anom-desc');
+    sl.add(new Option('Ожоги (число справа)','burn'));
+    ANT.forEach(function(a,i){sl.add(new Option(a[0],String(i)));});
+    function upd(){var v=sl.value; ds.textContent=v==='burn'?'произвольное число ожогов на руки и ноги':ANT[parseInt(v)][3];}
+    sl.addEventListener('change',upd); upd();
+  })();
+  function detectChance(){return Math.max(15,Math.min(90,45+5*effStat('sur')+(hasItem('detector')?20:0)-(numS('halluc')>0?15:0)));}
+  function ensurePath(){if(!S.path)S.path={a:Math.random()<0.35?pickAnt():-1,known:false};}
+  function throwBolt(){
+    if(!hasItem('bolts')){pathRes={text:'Нет болтов.'};paintAnom();return;}
+    takeItem('bolts',1); ensurePath();
+    var r=d100(), need=detectChance(), found=S.path.a>=0&&r<=need;
+    if(found)S.path.known=true;
+    pathRes={r:r,need:need,ok:found,text:found?'Болт сработал: впереди аномалия «'+ANT[S.path.a][0]+'». Её можно обойти.':'Болт упал спокойно: ничего не обнаружено.'};
+    commit();
+  }
+  function walkPath(){
+    leaveTrader(); ensurePath(); var a=S.path.a, known=S.path.known, txt;
+    if(a>=0&&!known){
+      txt='Вы попали в скрытую аномалию «'+ANT[a][0]+'»: '+ANT[a][2]();
+      showAlert(txt,true);
+    } else txt=a>=0?'Вы обошли аномалию «'+ANT[a][0]+'».':'Путь пройден без происшествий.';
+    pathRes={text:txt}; S.path=null; save(); advance(0.5,false,true); paintAnom();
+  }
+  function pathCard(){
+    var c=mk('div','campcard'); c.appendChild(mk('div','ct','ПУТЬ ВПЕРЁД'));
+    var st=mk('div','st');
+    [['Болтов',String(countItem('bolts'))],['Шанс обнаружить',detectChance()+'%']].forEach(function(r){
+      var sp=mk('span','',r[0]+': '); sp.appendChild(mk('b','',r[1])); st.appendChild(sp);
+    });
+    c.appendChild(st);
+    var row=mk('div','fireRow');
+    var tb=mk('button','t','Бросить болт'); tb.disabled=!hasItem('bolts'); tb.onclick=throwBolt;
+    var wb=mk('button','t','Пройти вперёд (30 мин)'); wb.onclick=walkPath;
+    row.appendChild(tb); row.appendChild(wb); c.appendChild(row);
+    if(pathRes){
+      if(pathRes.r!==undefined){
+        var col=pathRes.ok?'#3bff6a':'#e8d9b5', rr=mk('div','');
+        rr.style.cssText='display:flex;justify-content:space-between;align-items:baseline;margin:4px 0;';
+        rr.appendChild(mk('span','','Бросок d100, нужно не больше '+pathRes.need));
+        var nb=mk('b','',String(pathRes.r)); nb.style.cssText='font-size:1.3rem;color:'+col; rr.appendChild(nb); c.appendChild(rr);
+      }
+      c.appendChild(mk('div','msg',pathRes.text));
+    }
+    return c;
+  }
+
+  // ===== ВЫБРОС =====
+  function emissionFor(day){
+    var r=rngSeed('em'+day); if(r()>=0.22)return null;
+    return {s:600+Math.floor(r()*11)*60, d:30+Math.floor(r()*3)*15};
+  }
+  function emissionsNear(t0,t1){
+    var L=[];
+    for(var d=Math.max(1,Math.floor(t0/1440)+1);d<=Math.floor(t1/1440)+1;d++){
+      var e=emissionFor(d); if(e)L.push({id:'d'+d,s:(d-1)*1440+e.s,e:(d-1)*1440+e.s+e.d});
+    }
+    if(S.emMan)L.push(S.emMan);
+    return L;
+  }
+  function emissionHit(t0,t1){
+    var done=S.emDone||{};
+    return emissionsNear(t0,t1).filter(function(x){return x.s<t1&&x.e>t0&&!done[x.id];})[0]||null;
+  }
+  function emissionStatus(){
+    var t=nowMin(), L=emissionsNear(t,t+1440);
+    L=L.filter(function(x){return x.e>t&&!(S.emDone&&S.emDone[x.id]);}).sort(function(a,b){return a.s-b.s;});
+    var x=L[0]; if(!x)return {t:'Небо чистое, выбросов не ожидается.',c:'#e8d9b5'};
+    if(x.s<=t)return {t:'ИДЁТ ВЫБРОС! Небо багровое. Найдите укрытие.',c:'#ff6a5a'};
+    var m=x.s-t; if(m<=60)return {t:'Небо багровеет: выброс начнётся примерно через '+m+' мин. Срочно в укрытие.',c:'#ff9a4a'};
+    return {t:'Признаков выброса пока нет.',c:'#e8d9b5'};
+  }
+  function emissionCard(){
+    var c=mk('div','campcard'); c.appendChild(mk('div','ct','ВЫБРОС'));
+    var st=emissionStatus(); var sd=mk('div','',st.t); sd.style.cssText='font-weight:bold;margin-bottom:6px;color:'+st.c; c.appendChild(sd);
+    var row=mk('div','fireRow');
+    var lab=document.createElement('label'); lab.className='fireChk';
+    var cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!S.sheltered;
+    cb.onchange=function(){S.sheltered=cb.checked;save();};
+    lab.appendChild(cb); lab.appendChild(document.createTextNode('Я в укрытии (подвал, бункер)'));
+    row.appendChild(lab); c.appendChild(row);
+    c.appendChild(mk('div','msg','Без укрытия выброс даёт тяжёлую радиацию, слепит и роняет пульс. В укрытии почти безопасно. Предупреждения о выбросе передаёт радио «Сигнал».'));
+    var gm=mk('div','fireRow'); gm.style.marginTop='6px';
+    gm.appendChild(document.createTextNode('Мастер: выброс через '));
+    var inp=document.createElement('input'); inp.type='number'; inp.min='0'; inp.step='0.5'; inp.value='1'; inp.style.width='56px'; inp.id='em-in';
+    gm.appendChild(inp); gm.appendChild(document.createTextNode(' ч '));
+    var bt=mk('button','t','Запустить выброс');
+    bt.onclick=function(){var h=Math.max(0,parseFloat(inp.value)||0); S.emN=(S.emN||0)+1; var st0=nowMin()+Math.round(h*60); S.emMan={id:'m'+S.emN,s:st0,e:st0+30}; save(); paintCamp();};
+    gm.appendChild(bt); c.appendChild(gm);
+    return c;
+  }
+
+  function paintAnom(){
+    var b=document.getElementById('anom-body'); if(!b)return; b.innerHTML='';
+    var c=mk('div','campcard'); c.appendChild(mk('div','ct','АНОМАЛЬНОЕ ПОЛЕ: «'+fieldName().toUpperCase()+'»'));
+    var st=mk('div','st');
+    [['Поисков осталось',String(anomLeft())],['Детектор',hasItem('detector')?'есть':'нет'],['Контейнер',vaultOn()?'есть':'нет'],
+     ['Шанс находки',searchChance()+'%'],['Риск аномалии',hazardChance()+'%']].forEach(function(r){
+      var sp=mk('span','',r[0]+': '); sp.appendChild(mk('b','',r[1])); st.appendChild(sp);
+    });
+    c.appendChild(st);
+    var row=mk('div','fireRow');
+    var sb=mk('button','t','Исследовать аномалию (2 ч)'); sb.disabled=anomLeft()<=0; sb.onclick=searchAnomaly;
+    var cb=mk('button','t','Сменить поле (3 ч)'); cb.onclick=changeField;
+    row.appendChild(sb); row.appendChild(cb); c.appendChild(row);
+    var ar=artRad();
+    if(ar)c.appendChild(mk('div','msg','Артефакты в инвентаре: радиация '+(ar>0?'+':'−')+Math.abs(ar).toFixed(1)+' мЗв/ч.'));
+    if(anomMsg)c.appendChild(mk('div','msg',anomMsg));
+    b.appendChild(c); b.appendChild(pathCard()); b.appendChild(emissionCard());
+  }
+  paintAnom();
+
+  // ===== ЧЕРТЫ ХАРАКТЕРА =====
+  // [id, название, знак, описание, эффекты]
+  var TRAITS=[
+    ['sharp','Меткий глаз','+','Дальний бой: +8% к попаданию.',{hitR:8}],
+    ['shaky','Дрожащие руки','-','Дальний бой: −8% к попаданию.',{hitR:-8}],
+    ['brawler','Кулачный боец','+','Ближний бой: +8% к попаданию.',{hitM:8}],
+    ['clumsy','Неуклюжий','-','Ближний бой: −8% к попаданию.',{hitM:-8}],
+    ['nighteye','Ночное зрение','+','Штраф темноты к попаданию вдвое меньше.',{dark:0.5}],
+    ['nightblind','Куриная слепота','-','Штраф темноты к попаданию в полтора раза больше.',{dark:1.5}],
+    ['hardy','Неприхотливый','+','Голод и жажда расходуются на 20% медленнее.',{food:0.8}],
+    ['glutton','Ненасытный','-','Голод и жажда расходуются на 25% быстрее.',{food:1.25}],
+    ['tough','Закалённый','+','Шанс простуды при сне ниже на 15 пунктов.',{cold:-15}],
+    ['chilly','Мерзляк','-','Шанс простуды при сне выше на 15 пунктов.',{cold:15}],
+    ['rres','Радиорезистент','+','Радиация накапливается на 25% медленнее.',{rad:0.75}],
+    ['rsens','Радиочувствительный','-','Радиация накапливается на 25% быстрее.',{rad:1.25}],
+    ['immune','Крепкий иммунитет','+','Инфекция растёт на 25% медленнее.',{inf:0.75}],
+    ['weakimm','Слабый иммунитет','-','Инфекция растёт на 25% быстрее.',{inf:1.25}],
+    ['haggler','Торгаш','+','Покупки на 10% дешевле, продажа на 10% выгоднее.',{trade:0.1}],
+    ['sucker','Простофиля','-','Покупки на 10% дороже, продажа на 10% хуже.',{trade:-0.1}],
+    ['scout','Чутьё на артефакты','+','Шанс найти артефакт выше на 10 пунктов.',{find:10}],
+    ['jinx','Невезучий','-','Шанс найти артефакт ниже на 10 пунктов.',{find:-10}],
+    ['runner','Быстрые ноги','+','Скорость в бою +2 м за ход.',{spd:2}],
+    ['plod','Тяжёлая поступь','-','Скорость в бою −2 м за ход.',{spd:-2}],
+    ['strong','Крепыш','+','Сила +1.',{st:{str:1}}],
+    ['frail','Хилый','-','Сила −1.',{st:{str:-1}}],
+    ['wise','Сообразительный','+','Интеллект +1.',{st:{int:1}}],
+    ['dull','Тугодум','-','Интеллект −1.',{st:{int:-1}}],
+    ['fireman','Костровой','+','Шанс развести костёр выше на 15 пунктов.',{fire:15}],
+    ['fireless','Неумеха с огнём','-','Шанс развести костёр ниже на 15 пунктов.',{fire:-15}],
+    ['cookgood','Хороший повар','+','Блюда в котелке получаются лучше.',{cook:1}],
+    ['cookbad','Безрукий кулинар','-','Блюда в котелке получаются хуже.',{cook:-1}]
+  ];
+  function trList(){return (TRAITS&&S.traits)?TRAITS.filter(function(t){return S.traits[t[0]];}):[];}
+  function tn(k){var v=0;trList().forEach(function(t){if(typeof t[4][k]==='number')v+=t[4][k];});return v;}
+  function trm(k){var v=1;trList().forEach(function(t){if(typeof t[4][k]==='number')v*=t[4][k];});return v;}
+  function tst(k,sg){var v=0;trList().forEach(function(t){var x=t[4].st&&t[4].st[k];if(x&&x*sg>0)v+=Math.abs(x);});return v;}
+  function paintTraits(){
+    var b=document.getElementById('traits-body'); if(!b)return; b.innerHTML='';
+    var sel2=S.traits||{}, pos=0, neg=0;
+    TRAITS.forEach(function(t){if(sel2[t[0]]){if(t[2]==='+')pos++;else neg++;}});
+    var budget=2+neg;
+    b.appendChild(mk('div','msg','Очки черт: потрачено '+pos+' из '+budget+'. Две свободных, и ещё по одной за каждую негативную черту (не больше трёх).'));
+    [['+','ПОЛОЖИТЕЛЬНЫЕ','#3bff6a'],['-','НЕГАТИВНЫЕ','#ff9a8a']].forEach(function(g){
+      b.appendChild(mk('h3','',g[1]));
+      TRAITS.filter(function(t){return t[2]===g[0];}).forEach(function(t){
+        var on=!!sel2[t[0]], row=mk('div','row'), lab=document.createElement('label');
+        lab.style.cssText='display:flex;gap:8px;align-items:flex-start;cursor:pointer;';
+        var cb=document.createElement('input'); cb.type='checkbox'; cb.checked=on;
+        cb.disabled=on?(t[2]==='-'&&pos>budget-1):(t[2]==='+'?pos>=budget:neg>=3);
+        cb.onchange=function(){S.traits=S.traits||{};S.traits[t[0]]=cb.checked;save();paintTraits();paintEffects();render();};
+        var tx=document.createElement('span'), nm=document.createElement('b'); nm.style.color=g[2]; nm.textContent=t[1];
+        tx.appendChild(nm); tx.appendChild(document.createElement('br'));
+        var ds=document.createElement('span'); ds.style.cssText='font-size:.72rem;opacity:.85;'; ds.textContent=t[3]; tx.appendChild(ds);
+        lab.appendChild(cb); lab.appendChild(tx); row.appendChild(lab); b.appendChild(row);
+      });
+    });
+  }
+  paintTraits();
+
+  // ===== ЖУРНАЛ ЗАДАНИЙ =====
+  function qTime(q){
+    if(q.due==null)return {t:'без срока',c:'#e8d9b5'};
+    var m=q.due-nowMin();
+    if(m<0){var o=-m; return {t:'просрочено на '+(o>=60?Math.floor(o/60)+' ч':o+' мин'),c:'#ff6a5a'};}
+    var t=m>=60?Math.floor(m/60)+' ч'+(m%60?' '+(m%60)+' мин':''):m+' мин';
+    return {t:'осталось '+t,c:m<=60?'#ff9a4a':'#f2d03a'};
+  }
+  function questDone(q){
+    var over=q.due!=null&&q.due<nowMin(), pay=over?Math.floor((q.r||0)*0.5):(q.r||0);
+    q.st='ok'; q.paid=pay; if(pay)setMoney(money()+pay); save();
+    showAlert('Задание «'+q.t+'» выполнено'+(over?' с опозданием (награда вдвое меньше)':'')+(pay?': награда '+pay+' ₮.':'.'),false);
+    paintQuests();
+  }
+  function paintQuests(){
+    var b=document.getElementById('quests-list'); if(!b)return; b.innerHTML='';
+    var Q=S.quests||[], act=Q.filter(function(q){return q.st==='a';}), arch=Q.filter(function(q){return q.st!=='a';});
+    if(!act.length)b.appendChild(mk('div','msg','Активных заданий нет.'));
+    act.forEach(function(q){
+      var c=mk('div','campcard'), tm=qTime(q);
+      c.appendChild(mk('div','ct','ЗАДАНИЕ'));
+      var h=mk('b','',q.t); c.appendChild(h);
+      if(q.d)c.appendChild(mk('div','',q.d));
+      var meta=mk('div','',''); meta.style.cssText='font-size:.74rem;margin:4px 0;';
+      var rw=mk('span','','Награда: '+(q.r||0)+' ₮'); rw.style.color='#f2d03a';
+      var tt=mk('span','',' · Срок: '+tm.t); tt.style.color=tm.c;
+      meta.appendChild(rw); meta.appendChild(tt); c.appendChild(meta);
+      var row=mk('div','fireRow');
+      var ok=mk('button','t','Выполнено'); ok.onclick=function(){questDone(q);};
+      var no=mk('button','t','Провалено'); no.onclick=function(){q.st='x';save();paintQuests();};
+      var del=mk('button','t','Удалить'); del.onclick=function(){S.quests=S.quests.filter(function(x){return x!==q;});save();paintQuests();};
+      row.appendChild(ok); row.appendChild(no); row.appendChild(del); c.appendChild(row); b.appendChild(c);
+    });
+    if(arch.length){
+      b.appendChild(mk('h3','','ЗАВЕРШЁННЫЕ'));
+      arch.forEach(function(q){
+        var r=mk('div','row'), nm=mk('span','',q.t+' · '+(q.st==='ok'?'ВЫПОЛНЕНО'+(q.paid?', +'+q.paid+' ₮':''):'ПРОВАЛЕНО'));
+        nm.style.color=q.st==='ok'?'#3bff6a':'#ff9a8a';
+        var del=mk('button','t','Удалить'); del.onclick=function(){S.quests=S.quests.filter(function(x){return x!==q;});save();paintQuests();};
+        r.appendChild(nm); r.appendChild(del); b.appendChild(r);
+      });
+    }
+  }
+  document.getElementById('q-add').onclick=function(){
+    var t=document.getElementById('q-t').value.trim(); if(!t){showAlert('Укажите название задания.',true);return;}
+    var h=parseFloat(document.getElementById('q-h').value);
+    S.quests=S.quests||[]; S.qn=(S.qn||0)+1;
+    S.quests.push({id:S.qn,t:t,d:document.getElementById('q-d').value.trim(),r:Math.max(0,Math.floor(parseFloat(document.getElementById('q-r').value)||0)),due:isNaN(h)?null:nowMin()+Math.round(h*60),st:'a'});
+    ['q-t','q-d','q-r','q-h'].forEach(function(id){document.getElementById(id).value='';});
+    save(); paintQuests();
+  };
+  window.__quests=paintQuests; paintQuests();
+
+  // ===== ТОРГ, КРАФТ И РЕМОНТ =====
+  function intDisc(){return 0.02*((S.st_int||0)+tst('int',1));}
+  function haggle(){return S.bargain||0;}
+  function bargain(){
+    if(S.bargainTried||!S.trader)return;
+    var r=d100(), need=Math.min(90,30+8*effStat('int')+Math.round(tn('trade')*100)), t;
+    S.bargainTried=true;
+    if(r<=5){S.bargain=0.2;t='Блестящий торг: скидка 20%.';}
+    else if(r>=96){S.bargain=0; S.trader=false; t='Торговец оскорбился и ушёл.';}
+    else if(r<=need){S.bargain=0.1;t='Удачный торг: скидка 10%.';}
+    else{S.bargain=-0.1;t='Торг не удался: торговец поднял цены на 10%.';}
+    S.bargainMsg='Бросок d100: '+r+' (нужно не больше '+need+'). '+t;
+    save(); paintShop(); showInfo(); paintCamp();
+  }
+  var RECIPES=[
+    ['Бинты ×2',{cloth:2},'bandage',2],['Жгут',{cloth:1,scrap:1},'tourniquet',1],['Жгут из ремня',{gbelt:1},'tourniquet',1,{sure:true,time:0.1}],
+    ['Патрон 9 мм',{casing:1,powder:1},'ammo',1],['Патрон 12 калибра',{casing:1,powder:2,scrap:1},'shells',1],
+    ['Фильтр для противогаза',{cloth:2,scrap:1},'filter',1],['Ремкомплект',{scrap:2,cloth:1},'repairkit',1]
+  ];
+  var craftRes=null;
+  function craftChance(){return Math.min(95,55+7*effStat('int')+tn('craft'));}
+  function repairChance(){return Math.min(95,50+8*effStat('int')+tn('craft'));}
+  function craftIt(rc){
+    var ok=Object.keys(rc[1]).every(function(k){return countItem(k)>=rc[1][k];}); if(!ok)return;
+    var sure=rc[4]&&rc[4].sure, snap=JSON.stringify(S.inv), r=sure?undefined:d100(), need=craftChance(), win=sure||(r<=need&&r<96), s0=sel;
+    Object.keys(rc[1]).forEach(function(k){takeItem(k,rc[1][k]);});
+    if(win){
+      for(var i=0;i<rc[3];i++){ if(!placeBought(rc[2],'pack',false)){S.inv=JSON.parse(snap);craftRes={t:'Некуда положить результат.'};sel=s0;paintCraft();return;} }
+    }
+    sel=s0;
+    craftRes={r:r,need:need,ok:win,t:win?'Готово: '+rc[0]+'.':'Не получилось: материалы потеряны.'};
+    commit(); advance((rc[4]&&rc[4].time)||0.25,false,true);
+  }
+  function repairIt(o){
+    if(!hasItem('repairkit')){craftRes={t:'Нужен ремкомплект.'};paintCraft();return;}
+    takeItem('repairkit',1); var r=d100(), need=repairChance(), win=r<=need&&r<96;
+    if(win)delete o.broken;
+    craftRes={r:r,need:need,ok:win,t:win?'Починено: '+CAT[o.id].n+'.':'Починить не вышло: ремкомплект потрачен.'};
+    commit(); advance(0.5,false,true);
+  }
+  function paintCraft(){
+    var b=document.getElementById('craft-body'); if(!b)return; b.innerHTML='';
+    b.appendChild(mk('div','msg','Шанс крафта: '+craftChance()+'%, шанс ремонта: '+repairChance()+'% (зависят от Интеллекта). Крафт занимает 15 минут, ремонт 30.'));
+    b.appendChild(mk('h3','','КРАФТ'));
+    RECIPES.forEach(function(rc){
+      var row=mk('div','row'), need=Object.keys(rc[1]).map(function(k){return CAT[k].n+' ×'+rc[1][k]+' (есть '+countItem(k)+')';}).join(', ');
+      var has=Object.keys(rc[1]).every(function(k){return countItem(k)>=rc[1][k];});
+      var nm=mk('div','',rc[0]); var sm=mk('small','',need); sm.style.cssText='display:block;font-size:.68rem;opacity:.85;color:'+(has?'#3bff6a':'#ff9a8a'); nm.appendChild(sm);
+      var bt=mk('button','t','Сделать'); bt.disabled=!has; bt.onclick=function(){craftIt(rc);};
+      row.appendChild(nm); row.appendChild(bt); b.appendChild(row);
+    });
+    b.appendChild(mk('h3','','РЕМОНТ'));
+    var br=[]; Object.keys(S.inv).forEach(function(g){if(g!=='box')S.inv[g].forEach(function(o){if(o.broken)br.push(o);});});
+    if(!br.length)b.appendChild(mk('div','msg','Сломанного снаряжения нет.'));
+    br.forEach(function(o){
+      var row=mk('div','row'), nm=mk('div','',iname(o)); nm.appendChild(mk('small','','Нужен ремкомплект (есть '+countItem('repairkit')+')')); nm.lastChild.style.cssText='display:block;font-size:.68rem;opacity:.85';
+      var bt=mk('button','t','Починить'); bt.disabled=!hasItem('repairkit'); bt.onclick=function(){repairIt(o);};
+      row.appendChild(nm); row.appendChild(bt); b.appendChild(row);
+    });
+    if(craftRes){
+      if(craftRes.r!==undefined){
+        var col=craftRes.ok?'#3bff6a':'#ff9a8a', rr=mk('div',''); rr.style.cssText='display:flex;justify-content:space-between;align-items:baseline;margin:4px 0;';
+        rr.appendChild(mk('span','','Бросок d100, нужно не больше '+craftRes.need)); var nb=mk('b','',String(craftRes.r)); nb.style.cssText='font-size:1.3rem;color:'+col; rr.appendChild(nb); b.appendChild(rr);
+      }
+      b.appendChild(mk('div','msg',craftRes.t));
+    }
+  }
+  paintCraft();
+
+  // ===== ЗЕМЛЯ =====
+  function toGround(o){
+    var d=JSON.parse(JSON.stringify(o)); d.x=0; d.y=0; d.r=0; if(!d.n)d.n=1;
+    S.ground=S.ground||[];
+    var ex=CAT[d.id]&&CAT[d.id].st>1?S.ground.filter(function(x){return x.id===d.id&&!x.q;})[0]:null;
+    if(ex)ex.n+=d.n; else S.ground.push(d);
+  }
+  function pickUp(o){
+    var c=CAT[o.id], ok=false;
+    if(c.st>1){
+      var got=0; for(var i=0;i<o.n;i++){ if(placeBought(o.id,'pack',false))got++; else break; }
+      o.n-=got; ok=got>0; if(o.n<=0)S.ground=S.ground.filter(function(x){return x!==o;});
+    } else {
+      var d=JSON.parse(JSON.stringify(o)); d.x=0; d.y=0; d.r=0;
+      if(auto('pack',d)||auto('belt',d)){S.ground=S.ground.filter(function(x){return x!==o;});ok=true;sel={o:d};}
+    }
+    if(!ok)showAlert('Нет места, чтобы подобрать: '+c.n+'.',true);
+    commit();
+  }
+  function paintGround(){
+    var b=document.getElementById('ground-body'); if(!b)return; b.innerHTML='';
+    var G0=(S.ground||[]).filter(function(o){return CAT[o.id];});
+    if(!G0.length){b.appendChild(mk('div','msg','На земле ничего нет. Всё, что вы выбросите или что выпадет, окажется здесь и пропадёт при пропуске времени.'));return;}
+    b.appendChild(mk('div','msg','Всё, что лежит на земле, пропадёт при любом пропуске времени.'));
+    G0.forEach(function(o){
+      var r=mk('div','row'), nm=mk('span','',iname(o)+(CAT[o.id].st>1?' ×'+o.n:''));
+      var bt=mk('button','t','Подобрать'); bt.onclick=function(){pickUp(o);};
+      r.appendChild(nm); r.appendChild(bt); b.appendChild(r);
+    });
+    if(G0.length>1){var ab=mk('button','t','Подобрать всё'); ab.onclick=function(){G0.slice().forEach(function(o){pickUp(o);});}; b.appendChild(ab);}
+  }
+  paintGround();
+
+  // ===== ТОКЕН НА КАРТЕ (Owlbear Rodeo) =====
+  var TK='ru.stalker.sheet/token', tokMsg='', tokTimer=null;
+  function obr(){return window.__OBR||null;}
+  function tokData(){return {n:String(S.name||'Без имени').slice(0,40),w:woundLine(),rad:Math.round(numS('rad')),inf:Math.round(numS('infection')),pl:obr().player.id};}
+  function tokPut(ids,val){
+    return obr().scene.items.updateItems(ids,function(arr){
+      arr.forEach(function(i){ if(val)i.metadata[TK]=val; else delete i.metadata[TK]; });
+    });
+  }
+  async function tokBind(){
+    try{
+      var sel=await obr().player.getSelection();
+      if(!sel||!sel.length){tokMsg='Сначала выберите свой токен на карте, затем нажмите кнопку.';paintTok();return;}
+      var items=await obr().scene.items.getItems([sel[0]]);
+      if(!items.length){tokMsg='Не удалось найти выбранный токен.';paintTok();return;}
+      if(S.token&&S.token.id!==sel[0]){try{await tokPut([S.token.id],null);}catch(e){}}
+      await tokPut([sel[0]],tokData());
+      S.token={id:sel[0],name:items[0].name||'Токен'}; save();
+      tokMsg='Токен «'+S.token.name+'» привязан к листу. Мастер увидит ваше состояние, когда выберет его.';
+    }catch(e){tokMsg='Не удалось привязать токен. Нужна открытая сцена.';}
+    paintTok();
+  }
+  async function tokUnbind(){
+    if(!S.token)return;
+    try{await tokPut([S.token.id],null);}catch(e){}
+    S.token=null; save(); tokMsg='Токен отвязан.'; paintTok();
+  }
+  window.__tokenSync=function(){
+    if(!S.token||!obr())return;
+    clearTimeout(tokTimer);
+    tokTimer=setTimeout(function(){ try{ tokPut([S.token.id],tokData()).catch(function(){}); }catch(e){} },800);
+  };
+  function paintTok(){
+    var b=document.getElementById('token-body'); if(!b)return; b.innerHTML='';
+    if(!obr()){b.appendChild(mk('div','msg','Привязка токена работает только внутри Owlbear Rodeo.'));return;}
+    var c=mk('div','campcard'); c.appendChild(mk('div','ct','ПРИВЯЗКА ТОКЕНА'));
+    if(S.token){
+      c.appendChild(mk('div','','Привязан токен: «'+S.token.name+'». Его состояние обновляется само.'));
+      var r=mk('div','fireRow'); r.style.marginTop='6px';
+      var sh=mk('button','t','Выделить токен'); sh.onclick=function(){try{obr().player.select([S.token.id]);}catch(e){}};
+      var up=mk('button','t','Обновить сейчас'); up.onclick=function(){tokPut([S.token.id],tokData()).catch(function(){});tokMsg='Состояние токена обновлено.';paintTok();};
+      var ub=mk('button','t','Отвязать'); ub.onclick=tokUnbind;
+      r.appendChild(sh); r.appendChild(up); r.appendChild(ub); c.appendChild(r);
+    } else {
+      c.appendChild(mk('div','','Выберите свой токен на карте и нажмите кнопку. Тогда мастер, выбрав токен, увидит ваши раны, радиацию и инфекцию.'));
+      var r2=mk('div','fireRow'); r2.style.marginTop='6px';
+      var bb=mk('button','t','Привязать выбранный токен'); bb.onclick=tokBind; r2.appendChild(bb); c.appendChild(r2);
+    }
+    if(tokMsg)c.appendChild(mk('div','msg',tokMsg));
+    b.appendChild(c);
+  }
+  document.addEventListener('obr-ready',paintTok);
+  paintTok();
+
+  // ===== ТУГРИКИ И ЛАВКА =====
+  var PRICE={
+    firstaid:60,spray:20,bandage:24,ointment:36,tweezers:50,tourniquet:45,antiseptic:45,antibiotic:120,cloth:4,scrap:6,repairkit:80,prosth_arm:1800,prosth_leg:1500,bolts:2,artcase:180,detector:250,axe:60,sleeping_bag:70,tent:150,pot:40,matches:6,salt:6,adrenaline:135,betablock:90,
+    inhibitor:75,pills:30,antirad:105,ration:30,water:18,coffee:24,energy_drink:36,vodka:45,
+    gasmask:90,rad_suit:150,flashlight:25,helmet:40,vest:80,heavy_vest:160,bag:30,rucksack:70,gbelt:20,
+    pistol:120,shotgun:180,knife:25,filter:60,battery:24,ammo:6,shells:12,powder:15,casing:3
+  };
+  var SDESC={
+    firstaid:'Универсальная: лечит любую рану.',spray:'Лечит ожоги и рваные раны.',bandage:'Останавливает кровотечение.',
+    ointment:'Лечит ожоги.',tweezers:'Позволяет извлекать пули. Не расходуется.',tourniquet:'Останавливает сильное кровотечение.',
+    antiseptic:'Очищает раны и снижает риск заражения.',antibiotic:'Курс на сутки: замедляет инфекцию и постепенно снижает её.',cloth:'Материал для крафта.',scrap:'Материал для крафта и ремонта.',repairkit:'Для ремонта сломанного снаряжения.',prosth_arm:'Ставится на место потерянной руки.',prosth_leg:'Ставится на место потерянной ноги.',bolts:'Для проверки пути на аномалии.',artcase:'Свинцовый кейс: артефакты внутри не влияют на носителя.',detector:'Помогает находить артефакты и снижает риск аномалий.',axe:'Оружие ближнего боя. В руках позволяет рубить сухостой для костра.',sleeping_bag:'Защищает от простуды при сне и улучшает отдых.',tent:'Почти полностью защищает от простуды и даёт лучший отдых.',pot:'Нужен, чтобы готовить еду на костре.',matches:'Нужны, чтобы развести костёр.',salt:'Приправа для блюд.',adrenaline:'Резко бодрит и разгоняет сердце.',
+    betablock:'Сильно замедляет пульс.',inhibitor:'Слегка успокаивает пульс, притупляет голод и жажду.',
+    pills:'Снимает боль и немного успокаивает пульс.',antirad:'Выводит часть накопленной радиации.',
+    ration:'Утоляет голод.',water:'Утоляет жажду.',coffee:'Помогает сохранять бодрость дольше.',
+    energy_drink:'Сильно бодрит, но заставляет сердце колотиться.',vodka:'Немного утоляет жажду, но вызывает головокружение.',
+    gasmask:'Защищает дыхательные пути от радиации и токсинов.',rad_suit:'Костюм химзащиты: хорошая защита от радиации.',
+    flashlight:'Источник света, работает от батареек.',helmet:'Защищает голову.',vest:'Защищает торс.',
+    heavy_vest:'Тяжёлая броня для торса.',bag:'Небольшая сумка: добавляет место для вещей.',
+    rucksack:'Вместительный рюкзак: заметно добавляет место.',gbelt:'Тактический ремень для пояса.',
+    pistol:'Табельный пистолет.',shotgun:'Двуручный: мощный, тяжёлый и громкий.',knife:'Бесшумное оружие ближнего боя.',
+    filter:'Сменный фильтр для противогаза.',battery:'Для подзарядки фонарика.',ammo:'Патроны для пистолета.',
+    shells:'Патроны для дробовика.',powder:'Порох: вместе с гильзами даёт патроны.',casing:'Пустые гильзы для переснаряжения.'
+  };
+  var shopCat='med';
+  function traderOn(){return !!S.trader;}
+  function paintTrader(){
+    var on=traderOn();
+    document.getElementById('shop-body').style.display=on?'':'none';
+    document.getElementById('trader-off').style.display=on?'none':'';
+    document.getElementById('trader-on').checked=on;
+  }
+  function money(){var v=parseFloat(S.tugr);return isNaN(v)?200:Math.max(0,Math.floor(v));}
+  function setMoney(v){setV('tugr',Math.max(0,Math.floor(v)));paintWallet();paintShop();}
+  function paintWallet(){var el=document.getElementById('wallet-top');if(el)el.textContent='₮ '+money();}
+  function smsg(t,ok){var e=document.getElementById('shop-msg');e.textContent=t||'';e.style.color=ok===false?'#ff6a5a':'#f2d03a';}
+  function mkItem(id){
+    var c=CAT[id],o={id:id,n:1,x:0,y:0,r:0};
+    if(c.maxMag)o.m=0;
+    if(c.isLight||c.isFilterable){o.ch=c.maxCharge;o.on=false;}
+    return o;
+  }
+  // true, если предмет размещён
+  function placeBought(id,g,equip){
+    var c=CAT[id], other=g==='pack'?'belt':'pack';
+    if(equip&&c.st<=1){
+      var o=mkItem(id),sk=null;
+      SL.forEach(function(s){if(!sk&&fits('eq_'+s[0],o,0,0))sk=s[0];});
+      if(sk){S.inv['eq_'+sk].push(o);sel={o:o};return true;}
+    }
+    var order=[g,other,'eq_pocket1','eq_pocket2'];
+    if(c.st>1){
+      for(var i=0;i<order.length;i++){
+        var ex=(S.inv[order[i]]||[]).filter(function(p){return p.id===id&&p.n<c.st;})[0];
+        if(ex){ex.n++;sel={o:ex};return true;}
+      }
+    }
+    var n=mkItem(id);
+    if(auto(g,n)||auto(other,n)){sel={o:n};return true;}
+    return false;
+  }
+  // продажа: скупщик платит половину цены лавки
+  var SELL_RATE=0.5, SELL_EXTRA={wild_carrot:1,potato:1};
+  function intPen(){return penalties().int;}
+  function buyPrice(id){return Math.ceil(PRICE[id]*(1+0.05*intPen())*(1-tn('trade'))*(1-intDisc())*(1-haggle()));}
+  function sellPrice(id){
+    if(ART&&ART[id])return Math.max(1,Math.floor(ART[id].v*(1-0.05*intPen())*(1+tn('trade'))*(1+intDisc())*(1+haggle())));
+    if(PRICE[id]!==undefined)return Math.max(1,Math.floor(PRICE[id]*SELL_RATE*(1-0.05*intPen())*(1+tn('trade'))*(1+intDisc())*(1+haggle())));
+    return SELL_EXTRA[id]||0;
+  }
+  function sellItem(o,qty){
+    if(!traderOn())return;
+    var sp=sellPrice(o.id); if(!sp||!listOf(o))return;
+    qty=Math.max(1,Math.min(qty,o.n));
+    var name=CAT[o.id].n, total=sp*qty;
+    if(o.n<=qty){drop(o);sel=null;}else{o.n-=qty;}
+    S.tugr=money()+total;
+    save(); setMoney(money()); commit();
+    msg('Продано: '+name+(qty>1?' ×'+qty:'')+' за '+total+' ₮.');
+  }
+  function buy(id){
+    if(!traderOn()){smsg('Торговца нет рядом.',false);return;}
+    var price=buyPrice(id), qty=Math.max(1,Math.min(30,parseInt(document.getElementById('shop-qty').value)||1));
+    var g=document.getElementById('shop-to').value, equip=document.getElementById('shop-equip').checked;
+    var bought=0;
+    for(var i=0;i<qty;i++){
+      if(money()<price){ if(!bought){smsg('Не хватает тугриков: нужно '+price+' ₮, у вас '+money()+' ₮.',false);return;} break; }
+      if(!placeBought(id,g,equip)){ if(!bought){smsg('Некуда положить «'+CAT[id].n+'»: нет места в рюкзаке и на поясе.',false);return;} break; }
+      S.tugr=money()-price; bought++;
+    }
+    save(); setMoney(money());
+    var total=bought*price;
+    smsg('Куплено: '+CAT[id].n+(bought>1?' ×'+bought:'')+' за '+total+' ₮.'+(bought<qty?' (Остальное не куплено: не хватило денег или места.)':''));
+    render();
+  }
+  // коробки: несколько штук сразу, чуть дешевле, чем поштучно
+  var BOXES=[
+    {id:'matches',qty:10,price:50,cat:'gear',n:'Коробка спичек (10 шт.)',d:'Десять штук спичек разом, дешевле, чем поштучно.'},
+    {id:'ammo',qty:30,price:100,cat:'ammo',n:'Коробка патронов 9 мм (30 шт.)',d:'Тридцать патронов к пистолету разом.'},
+    {id:'shells',qty:12,price:90,cat:'ammo',n:'Коробка дроби (12 шт.)',d:'Двенадцать патронов 12 калибра для дробовика.'}
+  ];
+  function boxPrice(b){return Math.ceil(b.price*(1+0.05*intPen())*(1-tn('trade'))*(1-intDisc())*(1-haggle()));}
+  function buyBox(b){
+    if(!traderOn()){smsg('Торговца нет рядом.',false);return;}
+    var count=Math.max(1,Math.min(30,parseInt(document.getElementById('shop-qty').value)||1));
+    var g=document.getElementById('shop-to').value, pr=boxPrice(b), bought=0, why='';
+    for(var i=0;i<count;i++){
+      if(money()<pr){why='money';break;}
+      var snap=JSON.stringify(S.inv), ok=true;
+      for(var j=0;j<b.qty;j++){ if(!placeBought(b.id,g,false)){ok=false;break;} }
+      if(!ok){S.inv=JSON.parse(snap);why='room';break;}
+      S.tugr=money()-pr; bought++;
+    }
+    if(!bought){
+      smsg(why==='room'?'Некуда сложить: не хватает места в рюкзаке и на поясе.':'Не хватает тугриков: нужно '+pr+' ₮, у вас '+money()+' ₮.',false);
+      return;
+    }
+    save(); setMoney(money());
+    smsg('Куплено: '+b.n+(bought>1?' ×'+bought:'')+' за '+(bought*pr)+' ₮.'+(bought<count?' (Остальное не куплено: не хватило денег или места.)':''));
+    render();
+  }
+  function paintShop(){
+    paintTrader(); if(!traderOn())return;
+    var tabs=document.getElementById('shop-tabs'); tabs.innerHTML='';
+    [['med','Еда и Медицина'],['gear','Снаряжение и ОМ'],['weapon','Оружие'],['ammo','Боеприпасы']].forEach(function(t){
+      var b=mk('button','t'+(shopCat===t[0]?' act':''),t[1]);
+      b.onclick=function(){shopCat=t[0];paintShop();};
+      tabs.appendChild(b);
+    });
+    var list=document.getElementById('shop-list'); list.innerHTML='';
+    var m=money();
+    var bc=mk('div','campcard'); bc.appendChild(mk('div','ct','ТОРГ'));
+    var dsc=Math.round(intDisc()*100);
+    bc.appendChild(mk('div','',(dsc?'Скидка за Интеллект: '+dsc+'% (покупки дешевле, продажа выгоднее).':'Интеллект пока не даёт скидок.')));
+    var bb=mk('button','t','Поторговаться (d100)'); bb.disabled=!!S.bargainTried; bb.onclick=bargain;
+    var brow=mk('div','fireRow'); brow.appendChild(bb); bc.appendChild(brow);
+    if(S.bargainMsg)bc.appendChild(mk('div','msg',S.bargainMsg));
+    list.appendChild(bc);
+    if(intPen()>0)list.appendChild(mk('div','msg','Плохо соображаете: торговаться тяжело, цены выше на '+(intPen()*5)+'%, скупщик платит меньше.'));
+    Object.keys(CAT).forEach(function(id){
+      var c=CAT[id];
+      if(c.c!==shopCat)return;
+      if(PRICE[id]===undefined)return;
+      var row=mk('div','srow');
+      var nm=mk('div','',c.n); nm.appendChild(mk('small','',SDESC[id]||''));
+      var pr=mk('span','pr',buyPrice(id)+' ₮');
+      var b=mk('button','t','Купить'); b.disabled=m<buyPrice(id);
+      b.onclick=function(){buy(id);};
+      row.appendChild(nm);row.appendChild(pr);row.appendChild(b);
+      list.appendChild(row);
+    });
+    BOXES.filter(function(b){return b.cat===shopCat;}).forEach(function(b){
+      var row=mk('div','srow');
+      var nm=mk('div','',b.n); nm.appendChild(mk('small','',b.d));
+      var pr=mk('span','pr',boxPrice(b)+' ₮');
+      var bt=mk('button','t','Купить'); bt.disabled=m<boxPrice(b);
+      bt.onclick=function(){buyBox(b);};
+      row.appendChild(nm);row.appendChild(pr);row.appendChild(bt);
+      list.appendChild(row);
+    });
+  }
+  ['pack','belt'].forEach(function(g){document.getElementById('shop-to').add(new Option(G[g].t,g));});
+  document.querySelectorAll('[data-k="tugr"]').forEach(function(o){
+    o.addEventListener('input',function(){paintWallet();paintShop();});
+  });
+  document.getElementById('forage-on').addEventListener('change',function(){
+    S.forage=this.checked;
+    if(this.checked&&S.trader){S.trader=false;smsg('');paintShop();showInfo();}
+    save(); paintCamp();
+  });
+  function toggleCamp(){S.campOff=!S.campOff;save();paintCamp();}
+  document.getElementById('camp-h').addEventListener('click',toggleCamp);
+  document.getElementById('camp-h').addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleCamp();}});
+  document.getElementById('trader-on').addEventListener('change',function(){
+    S.trader=this.checked; S.bargain=0; S.bargainTried=false; S.bargainMsg=''; if(this.checked)S.forage=false; save(); smsg(''); paintShop(); showInfo(); paintCamp();
+  });
+  window.__shop=paintShop;
+  window.__camp=function(){paintCamp();paintAnom();paintCraft();paintGround();};
+  paintWallet(); paintShop();
+
+  window.__inv=render; render();
+
+  document.getElementById('reset').onclick=function(){
+    if(confirm('Очистить весь лист?')){ S={}; save(); location.reload(); }
+  };
+
+  // КОНТАКТЫ
+  S.contacts = S.contacts || [];
+  function renderContacts() {
+    var container = document.getElementById('contacts-list');
+    if (!container) return;
+    container.innerHTML = '';
+    if (S.contacts.length === 0) {
+      container.innerHTML = '<div style="font-size:0.75rem; opacity:0.6; text-align:center; padding:4px;">Нет записанных контактов или частот.</div>';
+      return;
+    }
+    S.contacts.forEach(function(c, index) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:6px; align-items:center; background:#1b140f; padding:4px 8px; border:1px solid #4a3a2c; font-size:0.78rem;';
+      var info = document.createElement('div');
+      info.style.flex = '1';
+      info.innerHTML = '<b style="color:#f2d03a;">' + c.name + '</b> <span style="opacity:0.8; margin-left:8px;">(' + c.freq + ')</span>';
+      var delBtn = document.createElement('button');
+      delBtn.className = 't'; delBtn.textContent = '×'; delBtn.style.padding = '0 6px';
+      delBtn.onclick = function() { S.contacts.splice(index, 1); save(); renderContacts(); };
+      row.appendChild(info); row.appendChild(delBtn); container.appendChild(row);
+    });
+  }
+  document.getElementById('add-contact-btn').onclick = function() {
+    var nameInput = document.getElementById('new-contact-name');
+    var freqInput = document.getElementById('new-contact-freq');
+    var nameVal = nameInput.value.trim();
+    var freqVal = freqInput.value.trim();
+    if (!nameVal) { showAlert('Введите имя или позывной контакта.', true); return; }
+    S.contacts.push({ name: nameVal, freq: freqVal || 'Не указана' });
+    save(); renderContacts();
+    nameInput.value = ''; freqInput.value = '';
+  };
+  renderContacts();
+
+  // ЭКСПОРТ
+  document.getElementById('export-btn').onclick = function() {
+    if(window.claude&&claude.use){
+      claude.use('downloads').then(function(dl){
+        var cn=S.name?S.name.replace(/[^a-zа-яё0-9]/gi,'_').toLowerCase():'character';
+        if(dl)dl.save({filename:cn+'_sheet.json',data:JSON.stringify(S,null,2)}).then(function(){showAlert('Лист персонажа сохранён в файл.',false);},function(){});
+        else legacyExport();
+      },legacyExport);
+      return;
+    }
+    legacyExport();
+  };
+  function legacyExport() {
+    var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(S, null, 2));
+    var dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", dataStr);
+    var charName = S.name ? S.name.replace(/[^a-zа-яё0-9]/gi, '_').toLowerCase() : 'character';
+    dlAnchor.setAttribute("download", charName + "_sheet.json");
+    document.body.appendChild(dlAnchor); dlAnchor.click(); dlAnchor.remove();
+    showAlert('Лист персонажа успешно сохранен в файл!', false);
+  }
+
+  // ИМПОРТ
+  var importInput = document.getElementById('import-file');
+  document.getElementById('import-btn').onclick = function() { importInput.click(); };
+  importInput.onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        var importedData = JSON.parse(evt.target.result);
+        if (typeof importedData === 'object' && importedData !== null) {
+          S = importedData; save(); location.reload();
+        } else { showAlert('Ошибка: файл поврежден.', true); }
+      } catch (err) { showAlert('Ошибка при чтении JSON-файла.', true); }
+    };
+    reader.readAsText(file); importInput.value = '';
+  };
+
+})();
+</script>
+</body>
+</html>

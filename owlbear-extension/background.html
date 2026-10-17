@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Лист сталкера: фон</title></head>
+<body>
+<script type="module">
+var CH='ru.stalker.sheet/';
+var SRC=['https://esm.sh/@owlbear-rodeo/sdk@3','https://cdn.jsdelivr.net/npm/@owlbear-rodeo/sdk@3/+esm'];
+async function load(){
+  if(window.OBR)return window.OBR;
+  for(var i=0;i<SRC.length;i++){ try{ var m=await import(SRC[i]); return m.default||m.OBR||m; }catch(e){} }
+  return null;
+}
+var OBR=await load();
+if(OBR&&OBR.isAvailable){
+  OBR.onReady(function(){
+    OBR.broadcast.onMessage(CH+'roll',function(ev){
+      var d=ev.data||{};
+      OBR.notification.show(String(d.name||'Игрок')+': '+String(d.text||'').slice(0,200));
+    });
+    var lastSel='';
+    OBR.player.onChange(function(player){
+      var sel=player.selection||[];
+      var key=sel.join(',');
+      if(key===lastSel)return; lastSel=key;
+      if(sel.length!==1)return;
+      OBR.scene.items.getItems(sel).then(function(items){
+        var d=items[0]&&items[0].metadata&&items[0].metadata['ru.stalker.sheet/token'];
+        if(!d||d.pl===OBR.player.id)return;
+        OBR.notification.show(String(d.n||'Персонаж')+': '+String(d.w||'ран нет')+'. Радиация '+d.rad+', инфекция '+d.inf+'.');
+      }).catch(function(){});
+    });
+  });
+}
+</script>
+</body></html>

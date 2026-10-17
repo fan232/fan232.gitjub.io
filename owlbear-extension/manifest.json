@@ -1,0 +1,16 @@
+{
+  "name": "Лист сталкера",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "description": "Лист персонажа: состояние, снаряжение, привал, крафт, торговля, радио.",
+  "author": "Лист сталкера",
+  "icon": "/icon.svg",
+  "action": {
+    "title": "Лист сталкера",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
+    "width": 520,
+    "height": 720
+  },
+  "background_url": "/background.html"
+}
